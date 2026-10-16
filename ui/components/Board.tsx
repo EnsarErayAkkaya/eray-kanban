@@ -5,14 +5,21 @@ import type { Task } from '@shared/task';
 import type { TaskStatus } from '@shared/taskStatus';
 import { type CardActionId, TaskCard } from './TaskCard';
 
-const COLUMNS: readonly { readonly status: TaskStatus; readonly label: string; readonly hint: string }[] = [
-  { status: 'backlog', label: 'Backlog', hint: 'Ideas, not ready for an agent' },
-  { status: 'todo', label: 'Todo', hint: 'The agent picks these up in order' },
-  { status: 'in_progress', label: 'In Progress', hint: 'Agent working' },
-  { status: 'needs_input', label: 'Needs Input', hint: 'The agent asked a question' },
-  { status: 'in_review', label: 'In Review', hint: 'Waiting for you; project paused' },
-  { status: 'done', label: 'Done', hint: '' },
-  { status: 'cancelled', label: 'Cancelled', hint: '' },
+interface Column {
+  readonly statuses: readonly TaskStatus[];
+  readonly label: string;
+  readonly hint: string;
+  /** Columns that wait on you, not on the agent. */
+  readonly yours?: boolean;
+}
+
+const COLUMNS: readonly Column[] = [
+  { statuses: ['backlog'], label: 'Backlog', hint: 'Ideas, not ready for an agent' },
+  { statuses: ['todo'], label: 'Todo', hint: 'The agent picks these up in order' },
+  { statuses: ['in_progress'], label: 'Agent working', hint: 'One task per project at a time' },
+  { statuses: ['needs_input'], label: 'Needs your answer', hint: 'The agent asked a question', yours: true },
+  { statuses: ['in_review'], label: 'Ready for review', hint: 'The project waits until you decide', yours: true },
+  { statuses: ['done', 'cancelled'], label: 'Finished', hint: 'Accepted or cancelled' },
 ];
 
 // Dragging is only for the moves you make yourself; everything else is buttons or the agent.
@@ -49,29 +56,31 @@ export function Board({ tasks, projects, showProjectNames, runs, logs, onAction,
   return (
     <div className="board">
       {COLUMNS.map((col) => {
-        const cards = tasks.filter((t) => t.status === col.status).sort(columnOrder);
-        const canDrop = dropEvent(col.status) !== undefined;
+        const status = col.statuses[0] ?? 'backlog';
+        const cards = tasks.filter((t) => col.statuses.includes(t.status)).sort(columnOrder);
+        const canDrop = dropEvent(status) !== undefined;
         return (
           <section
-            key={col.status}
-            className={`column${canDrop ? ' column--droppable' : ''}${canDrop && dropTarget === col.status ? ' column--over' : ''}`}
+            key={status}
+            className={`column${col.yours ? ' column--yours' : ''}${cards.length > 0 ? ' column--filled' : ''}${canDrop ? ' column--droppable' : ''}${canDrop && dropTarget === status ? ' column--over' : ''}`}
             onDragOver={(e) => {
               if (!canDrop) return;
               e.preventDefault();
-              setDropTarget(col.status);
+              setDropTarget(status);
             }}
             onDragLeave={() => setDropTarget(null)}
             onDrop={(e) => {
               e.preventDefault();
-              const event = dropEvent(col.status);
+              const event = dropEvent(status);
               if (dragging && event) onAction(dragging, event);
               setDragging(null);
               setDropTarget(null);
             }}
           >
-            <header className="column__head" title={col.hint}>
+            <header className="column__head">
               <h2>{col.label}</h2>
               <span className="column__count">{cards.length}</span>
+              <p className="column__hint">{col.hint}</p>
             </header>
             <div className="column__cards">
               {cards.map((task) => (

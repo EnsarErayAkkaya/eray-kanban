@@ -100,13 +100,18 @@ export function TaskCard({ task, projectName, runs, dependency, log, draggable, 
         <span className="card__id">#{task.id}</span>
         {task.priority !== 'normal' && <span className={`badge badge--${task.priority}`}>{task.priority}</span>}
         {task.status === 'in_progress' && <span className="pulse" aria-label="Agent working" />}
+        {task.status === 'cancelled' && <span className="badge badge--cancelled">cancelled</span>}
       </header>
       <h3 className="card__title">{task.title}</h3>
       <div className="card__meta">
         {projectName && <span>{projectName}</span>}
         <span>{task.model}</span>
-        <span>{task.turnLimit} turns max</span>
-        {task.visual && <span title={task.routes.join(', ')}>visual · {task.routes.length} routes</span>}
+        <span>up to {task.turnLimit} turns</span>
+        {task.visual && (
+          <span title={task.routes.join(', ')}>
+            screenshots of {task.routes.length} {task.routes.length === 1 ? 'page' : 'pages'}
+          </span>
+        )}
       </div>
       {(task.status === 'backlog' || task.status === 'todo') && task.dependsOn !== null && dependency?.status !== 'done' && (
         <div className={`card__waits${dependency?.status === 'cancelled' ? ' card__waits--blocked' : ''}`}>
@@ -118,7 +123,11 @@ export function TaskCard({ task, projectName, runs, dependency, log, draggable, 
       {lastRun && (
         <div className="card__run">
           Last run {OUTCOME_LABEL[lastRun.outcome]}
-          {totalTurns > 0 && ` · ${totalTurns} turns · $${totalCost.toFixed(3)}`}
+          {totalTurns > 0 && (
+            <span className="card__cost">
+              {totalTurns} turns, ${totalCost.toFixed(2)}
+            </span>
+          )}
           {lastRun.error && <div className="card__error">{lastRun.error}</div>}
         </div>
       )}

@@ -5,6 +5,7 @@ import { useBoard } from '../state/useBoard';
 import { Board } from './Board';
 import { ProjectForm } from './ProjectForm';
 import { ReviewPanel } from './ReviewPanel';
+import { Sheet } from './Sheet';
 import type { CardActionId } from './TaskCard';
 import { TaskForm } from './TaskForm';
 import { TemplatesEditor } from './TemplatesEditor';
@@ -23,6 +24,7 @@ export function App() {
   const settingsProject = state.projects.find((p) => p.id === projectId) ?? (state.projects.length === 1 ? state.projects[0] : undefined);
   const openTask = state.tasks.find((t) => t.id === openTaskId);
   const closeReview = useCallback(() => setOpenTaskId(null), []);
+  const closePanel = useCallback(() => setPanel('none'), []);
 
   const openReview = (task: Task) => {
     setOpenTaskId(task.id);
@@ -50,7 +52,7 @@ export function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <h1>Agent Kanban</h1>
+        <h1 className="brand">Agent Kanban</h1>
         <select
           aria-label="Project filter"
           value={projectId ?? ''}
@@ -104,29 +106,38 @@ export function App() {
           </div>
         ))}
 
-      {panel === 'project' && <ProjectForm onSubmit={actions.createProject} onClose={() => setPanel('none')} />}
-      {panel === 'settings' && settingsProject && (
-        <ProjectForm
-          key={settingsProject.id}
-          project={settingsProject}
-          onSubmit={(draft) => actions.updateProject(settingsProject.id, draft)}
-          onClose={() => setPanel('none')}
-        />
+      {panel === 'project' && (
+        <Sheet label="New project" onClose={closePanel}>
+          <ProjectForm onSubmit={actions.createProject} onClose={closePanel} />
+        </Sheet>
       )}
-      {panel === 'settings' && settingsProject && <TemplatesEditor key={settingsProject.id} projectId={settingsProject.id} />}
+      {panel === 'settings' && settingsProject && (
+        <Sheet label={`${settingsProject.name} settings`} onClose={closePanel}>
+          <ProjectForm
+            key={settingsProject.id}
+            project={settingsProject}
+            onSubmit={(draft) => actions.updateProject(settingsProject.id, draft)}
+            onClose={closePanel}
+          />
+          <TemplatesEditor key={`templates-${settingsProject.id}`} projectId={settingsProject.id} />
+        </Sheet>
+      )}
       {panel === 'task' && (
-        <TaskForm
-          projects={state.projects}
-          tasks={state.tasks}
-          defaultProjectId={projectId}
-          onSubmit={actions.createTask}
-          onClose={() => setPanel('none')}
-        />
+        <Sheet label="New task" onClose={closePanel}>
+          <TaskForm
+            projects={state.projects}
+            tasks={state.tasks}
+            defaultProjectId={projectId}
+            onSubmit={actions.createTask}
+            onClose={closePanel}
+          />
+        </Sheet>
       )}
 
-      {state.loaded && state.projects.length === 0 && panel === 'none' ? (
+      {state.loaded && state.projects.length === 0 ? (
         <div className="empty">
-          <p>Add a project to start: a local git repo the agent will work in.</p>
+          <h2>No projects yet</h2>
+          <p>A project is a local git repo. Each one gets its own agent, which works through its tasks one at a time.</p>
           <button className="btn btn--primary" onClick={() => setPanel('project')}>
             New project
           </button>

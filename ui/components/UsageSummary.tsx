@@ -9,10 +9,10 @@ export function UsageSummary({ totals }: { readonly totals: UsageTotals }) {
     `${count(totals.outputTokens)} output`,
     `${count(totals.cacheCreationTokens)} cache write`,
     `${count(totals.cacheReadTokens)} cache read`,
-  ].join(' · ');
+  ].join(', ');
   return (
     <span className="usage" title={`Tokens: ${tokens}`}>
-      ${totals.costUsd.toFixed(2)} · {count(totals.numTurns)} turns · {count(totals.runs)} runs
+      <strong>${totals.costUsd.toFixed(2)}</strong> spent over {count(totals.runs)} runs, {count(totals.numTurns)} turns
     </span>
   );
 }
