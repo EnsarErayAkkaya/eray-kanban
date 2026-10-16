@@ -1,8 +1,11 @@
-import type { Run, RunLogLine } from './run';
-import type { Task } from './task';
+import { z } from 'zod';
+import { RunLogLineSchema, RunSchema } from './run';
+import { TaskSchema } from './task';
 
 // Pushed to the UI over SSE.
-export type BoardEvent =
-  | { readonly type: 'task'; readonly task: Task }
-  | { readonly type: 'run'; readonly run: Run }
-  | { readonly type: 'log'; readonly taskId: number; readonly lines: readonly RunLogLine[] };
+export const BoardEventSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('task'), task: TaskSchema }),
+  z.object({ type: z.literal('run'), run: RunSchema }),
+  z.object({ type: z.literal('log'), taskId: z.number().int().positive(), lines: z.array(RunLogLineSchema) }),
+]);
+export type BoardEvent = z.infer<typeof BoardEventSchema>;

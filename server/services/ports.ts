@@ -121,6 +121,15 @@ export interface AgentPort {
   killOrphan(pid: number, sessionId: string): boolean;
 }
 
+export interface WorkScheduler {
+  kick(projectId: number): Promise<void>;
+  stop(taskId: number): boolean;
+}
+
+export interface RepoProbe {
+  isGitRepo(path: string): boolean;
+}
+
 export interface BoardEventSink {
   publish(event: BoardEvent): void;
 }
