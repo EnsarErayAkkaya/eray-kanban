@@ -6,7 +6,7 @@ export const PRIORITIES = ['high', 'normal', 'low'] as const;
 export const GIT_ISSUES = ['guard_tripped', 'merge_conflict', 'push_failed'] as const;
 export type GitIssue = (typeof GIT_ISSUES)[number];
 
-const RouteSchema = z.string().trim().startsWith('/', 'routes start with /').max(200);
+export const RouteSchema = z.string().trim().startsWith('/', 'routes start with /').max(200);
 
 const fields = {
   title: z.string().trim().min(1).max(200),

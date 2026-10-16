@@ -114,6 +114,32 @@ describe('ReviewService', () => {
     });
   });
 
+  describe('answer', () => {
+    const waitingForInput = (withSession = true): Task => {
+      const task = move(tasks.create(newTask(project.id)), 'promote', 'start');
+      if (withSession) {
+        runs.start({ taskId: task.id, sessionId: 'sess-1', kind: 'initial', model: 'sonnet', turnLimit: 30, input: 'x' });
+      }
+      return move(task, 'askInput');
+    };
+
+    it('moves the task back to In Progress and resumes with the answer', () => {
+      const task = waitingForInput();
+      expect(service.answer(task.id, '/settings').status).toBe('in_progress');
+      expect(scheduler.answered).toEqual([[task.id, '/settings']]);
+    });
+
+    it('refuses a task that is not waiting for input, or one with no session', () => {
+      expect(() => service.answer(tasks.create(newTask(project.id)).id, 'x')).toThrow(
+        'Only a task waiting for input can be answered',
+      );
+      expect(() => service.answer(999, 'x')).toThrow(NotFoundError);
+      const noSession = waitingForInput(false);
+      expect(() => service.answer(noSession.id, 'x')).toThrow('This task has no agent session to resume');
+      expect(tasks.get(noSession.id)?.status).toBe('needs_input');
+    });
+  });
+
   describe('accept', () => {
     it('commits with the project format and the agent summary, then moves to Done', async () => {
       const task = inReview();

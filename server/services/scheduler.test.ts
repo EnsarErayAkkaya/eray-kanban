@@ -119,6 +119,7 @@ describe('Scheduler', () => {
       {
         taskTemplate: '# Task #{{id}}: {{title}}',
         feedbackTemplate: 'Feedback on #{{id}}: {{feedback}}',
+        answerTemplate: 'Answer on #{{id}}: {{answer}}',
         checkFixTemplate: 'Fix #{{id}}:\n{{failures}}',
         runTimeoutMs: 60_000,
         newSessionId: () => `new-session-${++sessions}`,
@@ -173,6 +174,22 @@ describe('Scheduler', () => {
     await scheduler.kick(project.id);
     expect(statusOf(task.id)).toBe('needs_input');
     expect(logTexts(task.id)).toContain('system: Question: Which route?');
+  });
+
+  it('resumes the same session with the answer and carries on to review', async () => {
+    agent.script = finishWith({ kind: 'result', result: result(fence({ outcome: 'needs_input', question: 'Which route?' })) });
+    const task = todo();
+    await scheduler.kick(project.id);
+    tasks.applyStatusChange(transition(tasks.get(task.id) ?? task, 'answer'));
+
+    agent.script = finishWith({
+      kind: 'result',
+      result: result(fence({ outcome: 'done', summary: 'Added /settings', notes: [], concerns: [] })),
+    });
+    await scheduler.resumeWithAnswer(task.id, '/settings');
+    expect(agent.calls.at(-1)).toMatchObject({ prompt: `Answer on #${task.id}: /settings`, sessionId: 'sess-1', resume: true });
+    expect(runs.listByTask(task.id).map((r) => r.kind)).toEqual(['initial', 'answer']);
+    expect(statusOf(task.id)).toBe('in_review');
   });
 
   it('still sends the task to review when the review JSON is missing', async () => {

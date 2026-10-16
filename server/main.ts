@@ -26,11 +26,13 @@ import { SqliteRunRepo } from './infra/sqlite/sqliteRunRepo';
 import { SqliteScreenshotRepo } from './infra/sqlite/sqliteScreenshotRepo';
 import { SqliteSnapshotRepo } from './infra/sqlite/sqliteSnapshotRepo';
 import { SqliteTaskRepo } from './infra/sqlite/sqliteTaskRepo';
+import { SqliteTemplateRepo } from './infra/sqlite/sqliteTemplateRepo';
 import type { AdapterRegistry, Logger, Notifier } from './services/ports';
 import { ProjectService } from './services/projectService';
 import { ReviewService } from './services/reviewService';
 import { Scheduler } from './services/scheduler';
 import { TaskService } from './services/taskService';
+import { TemplateService } from './services/templateService';
 
 // Invariant 8: never bind to anything but loopback.
 const HOST = '127.0.0.1';
@@ -91,6 +93,7 @@ async function main(): Promise<void> {
     {
       taskTemplate: fs.readFileSync(prompt('task.md'), 'utf8'),
       feedbackTemplate: fs.readFileSync(prompt('feedback.md'), 'utf8'),
+      answerTemplate: fs.readFileSync(prompt('answer.md'), 'utf8'),
       checkFixTemplate: fs.readFileSync(prompt('checkFix.md'), 'utf8'),
       runTimeoutMs: RUN_TIMEOUT_MS,
       newSessionId: () => crypto.randomUUID(),
@@ -99,7 +102,7 @@ async function main(): Promise<void> {
 
   const app = buildServer(
     {
-      projects: new ProjectService(projectRepo, taskRepo, new FsRepoProbe(), scheduler),
+      projects: new ProjectService(projectRepo, taskRepo, new FsRepoProbe(), scheduler, runRepo),
       tasks: new TaskService(projectRepo, taskRepo, runRepo, scheduler, hub),
       review: new ReviewService({
         projects: projectRepo,
@@ -113,6 +116,7 @@ async function main(): Promise<void> {
         scheduler,
         events: hub,
       }),
+      templates: new TemplateService(projectRepo, new SqliteTemplateRepo(db, clock)),
       subscribe: (listener) => hub.subscribe(listener),
       heartbeatMs: 25_000,
     },

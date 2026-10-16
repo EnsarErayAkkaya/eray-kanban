@@ -3,9 +3,10 @@ import type { Model } from '@shared/common';
 import type { BoardEvent, ProjectStatus } from '@shared/events';
 import type { NewProject, PROJECT_TYPES, Project, ProjectPatch, ScreenshotSize } from '@shared/project';
 import type { Screenshot } from '@shared/screenshot';
-import type { LogKind, Run, RunKind, RunLogLine, RunOutcome } from '@shared/run';
+import type { LogKind, ProjectUsage, Run, RunKind, RunLogLine, RunOutcome } from '@shared/run';
 import type { ReviewJson } from '@shared/review';
 import type { GitIssue, Task, TaskPatch } from '@shared/task';
+import type { NewTemplate, TaskTemplate, TemplatePatch } from '@shared/template';
 import type { StatusChange } from '../domain/taskMachine';
 
 export type Clock = () => string;
@@ -17,6 +18,14 @@ export interface ProjectRepo {
   get(id: number): Project | undefined;
   list(): Project[];
   update(id: number, patch: ProjectPatch): Project;
+}
+
+export interface TemplateRepo {
+  create(projectId: number, template: NewTemplate): TaskTemplate;
+  get(id: number): TaskTemplate | undefined;
+  listByProject(projectId: number): TaskTemplate[];
+  update(id: number, patch: TemplatePatch): TaskTemplate;
+  delete(id: number): void;
 }
 
 export interface NewTask {
@@ -108,6 +117,7 @@ export interface RunRepo {
   listByTask(taskId: number): Run[];
   appendLog(runId: number, lines: readonly NewLogLine[]): RunLogLine[];
   logAfter(runId: number, afterSeq: number): RunLogLine[];
+  usageByProject(): ProjectUsage[];
 }
 
 export interface AgentRequest {
@@ -274,6 +284,7 @@ export interface WorkScheduler {
   /** Stops the run, if any, and resolves once its worker has finished and moved the task on. */
   stopAndWait(taskId: number): Promise<void>;
   resumeWithFeedback(taskId: number, feedback: string): Promise<void>;
+  resumeWithAnswer(taskId: number, answer: string): Promise<void>;
   statuses(): ProjectStatus[];
 }
 

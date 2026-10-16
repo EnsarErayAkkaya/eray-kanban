@@ -50,6 +50,51 @@ describe('SqliteRunRepo', () => {
     expect(repo.listRunning().map((r) => [r.id, r.pid])).toEqual([[live.id, 4242]]);
   });
 
+  it('totals usage per project, counting unfinished runs as zero', () => {
+    const clock = fakeClock();
+    const db = memoryDb();
+    const taskRepo = new SqliteTaskRepo(db, clock);
+    const web = taskRepo.create(newTask(seedProject(db, clock, 'web').id));
+    const api = taskRepo.create(newTask(seedProject(db, clock, 'api').id));
+    const runs = new SqliteRunRepo(db, clock);
+    const usage = (turns: number, cost: number) => ({
+      numTurns: turns,
+      inputTokens: 10,
+      outputTokens: 100,
+      cacheCreationTokens: 1,
+      cacheReadTokens: 1000,
+      costUsd: cost,
+    });
+    const start = (taskId: number) => runs.start({ ...run, taskId });
+    runs.finish(start(web.id).id, { outcome: 'completed', usage: usage(5, 0.25), error: null });
+    runs.finish(start(web.id).id, { outcome: 'turn_limit', usage: usage(30, 0.5), error: null });
+    start(web.id);
+    runs.finish(start(api.id).id, { outcome: 'failed', usage: null, error: 'crashed' });
+
+    expect(runs.usageByProject()).toEqual([
+      {
+        projectId: web.projectId,
+        runs: 3,
+        numTurns: 35,
+        inputTokens: 20,
+        outputTokens: 200,
+        cacheCreationTokens: 2,
+        cacheReadTokens: 2000,
+        costUsd: 0.75,
+      },
+      {
+        projectId: api.projectId,
+        runs: 1,
+        numTurns: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+        costUsd: 0,
+      },
+    ]);
+  });
+
   it('finishes with usage, once', () => {
     const { id } = repo.start(run);
     const usage = {

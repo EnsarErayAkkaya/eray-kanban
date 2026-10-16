@@ -84,6 +84,18 @@ export class ReviewService {
     return updated;
   }
 
+  answer(taskId: number, answer: string): Task {
+    if (this._busy.has(taskId)) throw new ConflictError('Another action is already running for this task');
+    const task = this._require(taskId);
+    if (task.status !== 'needs_input') throw new ConflictError('Only a task waiting for input can be answered');
+    if (!this._deps.runs.listByTask(taskId).some((r) => r.sessionId !== null)) {
+      throw new ConflictError('This task has no agent session to resume');
+    }
+    const updated = this._move(task, 'answer');
+    void this._deps.scheduler.resumeWithAnswer(taskId, answer);
+    return updated;
+  }
+
   /** Commit (invariant 6), then Done, then the follow-up; a failed follow-up leaves a badge, not a stuck task. */
   accept(taskId: number, options: AcceptOptions): Promise<Task> {
     return this._exclusive(taskId, async () => {

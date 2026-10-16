@@ -1,6 +1,6 @@
 # Agent Kanban — Project Plan
 
-Oct 16, 2026 · @Master · updated Oct 17, 2026: M1 to M3 done, M4 next
+Oct 16, 2026 · @Master · updated Oct 17, 2026: M1 to M3 done, M4 built and waiting on its soak test
 
 ## Goals and scope
 
@@ -159,7 +159,7 @@ Agents can edit files and run project commands inside their own repo, and nothin
 
 Four milestones, each usable on its own; web projects are fully covered after M3.
 
-**Status (Oct 17, 2026):** M1, M2 and M3 are done and committed. M4 is next and not started.
+**Status (Oct 17, 2026):** M1, M2 and M3 are done and committed. M4's features are built and tested; its done condition, a day of parallel use, is still to run.
 
 1. **M1 — Board and one worker.** ✅ Done. Projects and tasks in SQLite, kanban UI, one worker running the CLI headless, live log on the card.
    - Done when: a Todo task in one project runs and its log streams on the board.
@@ -170,9 +170,10 @@ Four milestones, each usable on its own; web projects are fully covered after M3
 3. **M3 — Web adapter.** ✅ Done. Check commands, auto-fix pass, dev server handling, Playwright screenshots, macOS notification on review.
    - Done when: a Visual task arrives in review with screenshots of its routes and green checks.
    - Checked in the browser: a Visual task reached review with green checks and screenshots at desktop and mobile size, and the dev server the board started was stopped afterwards. In a separate run, a lint failure was fixed by the automatic fix pass.
-4. **M4 — Polish and parallel projects.** ⏳ Next. All projects running at once, cost totals, templates, dependencies, Needs Input state.
+4. **M4 — Polish and parallel projects.** 🔨 Built, soak test pending. All projects running at once, cost totals, templates, dependencies, Needs Input state.
    - Done when: three projects run in parallel for a day without manual git cleanup.
-   - Already in place: different projects can run in parallel, and dependencies work in the scheduler. Needs Input exists as a state but you can't answer it yet.
+   - Built: projects run in parallel. A Needs Input question is answered from the review panel and the agent resumes its session. New tasks can depend on another task, and cards show what they wait for (or that the dependency was cancelled). The top bar shows cost, turns and runs for one project or all. Per-project templates (name, title prefix, description, criteria, priority, visual and routes, model, turn limit) are managed in project settings and pre-fill the task form.
+   - Not yet: changing a task's dependency after it is created, and a per-project or global kill switch.
 5. **Later — Unity adapter.** Editor launch on demand, Unity MCP checks and captures.
 
 ### Decisions made along the way

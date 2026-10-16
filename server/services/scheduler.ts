@@ -26,7 +26,7 @@ import type {
   WorkScheduler,
 } from './ports';
 import { extractReviewJson } from './reviewJson';
-import { renderCheckFixPrompt, renderFeedbackPrompt, renderTaskPrompt } from './taskPrompt';
+import { renderAnswerPrompt, renderCheckFixPrompt, renderFeedbackPrompt, renderTaskPrompt } from './taskPrompt';
 
 export interface SchedulerDeps {
   readonly projects: ProjectRepo;
@@ -46,10 +46,13 @@ export interface SchedulerDeps {
 export interface SchedulerOptions {
   readonly taskTemplate: string;
   readonly feedbackTemplate: string;
+  readonly answerTemplate: string;
   readonly checkFixTemplate: string;
   readonly runTimeoutMs: number;
   readonly newSessionId: () => string;
 }
+
+type ResumeKind = Extract<RunKind, 'feedback' | 'answer'>;
 
 interface Session {
   readonly id: string;
@@ -128,12 +131,12 @@ export class Scheduler implements WorkScheduler {
 
   /** Resumes the task's last session with review feedback; the task must already be back in progress. */
   resumeWithFeedback(taskId: number, feedback: string): Promise<void> {
-    const task = this._deps.tasks.get(taskId);
-    if (!task) return Promise.resolve();
-    // A kick that found the project occupied ends at once; queue behind it instead of being dropped.
-    const running = this._workers.get(task.projectId);
-    if (running) return running.then(() => this.resumeWithFeedback(taskId, feedback));
-    return this._exclusive(task.projectId, () => this._resume(task.id, feedback));
+    return this._queueResume(taskId, 'feedback', feedback);
+  }
+
+  /** Resumes the task's last session with the answer to its question; the task must already be back in progress. */
+  resumeWithAnswer(taskId: number, answer: string): Promise<void> {
+    return this._queueResume(taskId, 'answer', answer);
   }
 
   statuses(): ProjectStatus[] {
@@ -205,7 +208,16 @@ export class Scheduler implements WorkScheduler {
     await this._pipeline(project, task, { kind: 'initial', input: prompt, session: { id: this._options.newSessionId(), resume: false } });
   }
 
-  private async _resume(taskId: number, feedback: string): Promise<void> {
+  private _queueResume(taskId: number, kind: ResumeKind, text: string): Promise<void> {
+    const task = this._deps.tasks.get(taskId);
+    if (!task) return Promise.resolve();
+    // A kick that found the project occupied ends at once; queue behind it instead of being dropped.
+    const running = this._workers.get(task.projectId);
+    if (running) return running.then(() => this._queueResume(taskId, kind, text));
+    return this._exclusive(task.projectId, () => this._resume(task.id, kind, text));
+  }
+
+  private async _resume(taskId: number, kind: ResumeKind, text: string): Promise<void> {
     const { tasks, projects, runs, log } = this._deps;
     const task = tasks.get(taskId);
     const project = task && projects.get(task.projectId);
@@ -222,8 +234,11 @@ export class Scheduler implements WorkScheduler {
       this._move(task, 'submit');
       return;
     }
-    const prompt = renderFeedbackPrompt(this._options.feedbackTemplate, task, feedback);
-    await this._pipeline(project, task, { kind: 'feedback', input: prompt, session: { id: sessionId, resume: true } });
+    const prompt =
+      kind === 'answer'
+        ? renderAnswerPrompt(this._options.answerTemplate, task, text)
+        : renderFeedbackPrompt(this._options.feedbackTemplate, task, text);
+    await this._pipeline(project, task, { kind, input: prompt, session: { id: sessionId, resume: true } });
   }
 
   // run → guard → checks → at most one fix pass per round → review. One signal stops whichever step is running.

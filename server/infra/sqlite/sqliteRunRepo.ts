@@ -1,6 +1,6 @@
 import type { Database, Statement, Transaction } from 'better-sqlite3';
 import { type ReviewJson, ReviewJsonSchema } from '@shared/review';
-import { type Run, type RunLogLine, RunLogLineSchema, RunSchema } from '@shared/run';
+import { type ProjectUsage, type Run, type RunLogLine, RunLogLineSchema, RunSchema } from '@shared/run';
 import { ConflictError, NotFoundError } from '../../domain/errors';
 import type { Clock, NewLogLine, NewRun, RunEnd, RunRepo } from '../../services/ports';
 import { sqliteCode } from './sqliteUtil';
@@ -95,6 +95,7 @@ export class SqliteRunRepo implements RunRepo {
   private readonly _get: Statement<[number], RunRow>;
   private readonly _byTask: Statement<[number], RunRow>;
   private readonly _logAfter: Statement<[number, number], LogRow>;
+  private readonly _usage: Statement<[], ProjectUsage>;
   private readonly _appendLog: Transaction<(runId: number, lines: readonly NewLogLine[]) => RunLogLine[]>;
 
   constructor(
@@ -117,6 +118,16 @@ export class SqliteRunRepo implements RunRepo {
     this._get = db.prepare('SELECT * FROM runs WHERE id = ?');
     this._byTask = db.prepare('SELECT * FROM runs WHERE task_id = ? ORDER BY id');
     this._logAfter = db.prepare('SELECT * FROM run_log WHERE run_id = ? AND seq > ? ORDER BY seq');
+    this._usage = db.prepare(`
+      SELECT t.project_id AS projectId, COUNT(*) AS runs,
+        COALESCE(SUM(r.num_turns), 0) AS numTurns,
+        COALESCE(SUM(r.input_tokens), 0) AS inputTokens,
+        COALESCE(SUM(r.output_tokens), 0) AS outputTokens,
+        COALESCE(SUM(r.cache_creation_tokens), 0) AS cacheCreationTokens,
+        COALESCE(SUM(r.cache_read_tokens), 0) AS cacheReadTokens,
+        COALESCE(SUM(r.cost_usd), 0) AS costUsd
+      FROM runs r JOIN tasks t ON t.id = r.task_id
+      GROUP BY t.project_id ORDER BY t.project_id`);
 
     const maxSeq = db.prepare<[number], { seq: number }>('SELECT COALESCE(MAX(seq), 0) AS seq FROM run_log WHERE run_id = ?');
     const insertLog = db.prepare<[LogRow]>('INSERT INTO run_log (run_id, seq, kind, text, at) VALUES (@run_id, @seq, @kind, @text, @at)');
@@ -193,6 +204,10 @@ export class SqliteRunRepo implements RunRepo {
 
   listByTask(taskId: number): Run[] {
     return this._byTask.all(taskId).map(fromRow);
+  }
+
+  usageByProject(): ProjectUsage[] {
+    return this._usage.all();
   }
 
   appendLog(runId: number, lines: readonly NewLogLine[]): RunLogLine[] {

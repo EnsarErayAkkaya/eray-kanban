@@ -3,14 +3,17 @@ import { RunChecksSchema } from '@shared/check';
 import { type BoardEvent, BoardEventSchema, ProjectStatusSchema } from '@shared/events';
 import { type CreateProjectInput, ProjectSchema, type UpdateProjectInput } from '@shared/project';
 import { type AcceptOptions, ReviewChangesSchema } from '@shared/review';
-import { RunLogLineSchema, RunSchema } from '@shared/run';
+import { ProjectUsageSchema, RunLogLineSchema, RunSchema } from '@shared/run';
 import { ScreenshotSchema } from '@shared/screenshot';
 import { type CreateTaskInput, TaskSchema } from '@shared/task';
+import { type CreateTemplateInput, TaskTemplateSchema, type UpdateTemplateInput } from '@shared/template';
 import type { TaskEvent } from '@shared/taskStatus';
 
 export type ProjectDraft = z.input<typeof CreateProjectInput>;
 export type ProjectPatchDraft = z.input<typeof UpdateProjectInput>;
 export type TaskDraft = z.input<typeof CreateTaskInput>;
+export type TemplateDraft = z.input<typeof CreateTemplateInput>;
+export type TemplatePatchDraft = z.input<typeof UpdateTemplateInput>;
 
 export class ApiError extends Error {
   constructor(
@@ -34,7 +37,7 @@ function describeError(body: unknown, status: number): string {
   return issues?.length ? issues.join('; ') : parsed.data.error;
 }
 
-async function call<T>(schema: z.ZodType<T>, method: 'GET' | 'POST' | 'PATCH', path: string, body?: unknown): Promise<T> {
+async function call<T>(schema: z.ZodType<T>, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
   const init: RequestInit =
     body === undefined ? { method } : { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) };
   const res = await fetch(`/api${path}`, init);
@@ -46,8 +49,15 @@ async function call<T>(schema: z.ZodType<T>, method: 'GET' | 'POST' | 'PATCH', p
 export const api = {
   projects: () => call(z.array(ProjectSchema), 'GET', '/projects'),
   projectStatuses: () => call(z.array(ProjectStatusSchema), 'GET', '/projects/status'),
+  projectUsage: () => call(z.array(ProjectUsageSchema), 'GET', '/projects/usage'),
+  templates: (projectId: number) => call(z.array(TaskTemplateSchema), 'GET', `/projects/${projectId}/templates`),
+  createTemplate: (projectId: number, draft: TemplateDraft) =>
+    call(TaskTemplateSchema, 'POST', `/projects/${projectId}/templates`, draft),
+  updateTemplate: (id: number, patch: TemplatePatchDraft) => call(TaskTemplateSchema, 'PATCH', `/templates/${id}`, patch),
+  deleteTemplate: (id: number) => call(z.null(), 'DELETE', `/templates/${id}`),
   checkProject: (projectId: number) => call(z.object({ checking: z.boolean() }), 'POST', `/projects/${projectId}/check`),
   reject: (taskId: number, feedback: string) => call(TaskSchema, 'POST', `/tasks/${taskId}/reject`, { feedback }),
+  answer: (taskId: number, answer: string) => call(TaskSchema, 'POST', `/tasks/${taskId}/answer`, { answer }),
   accept: (taskId: number, options: AcceptOptions) => call(TaskSchema, 'POST', `/tasks/${taskId}/accept`, options),
   cancel: (taskId: number) => call(TaskSchema, 'POST', `/tasks/${taskId}/cancel`),
   retryPush: (taskId: number) => call(TaskSchema, 'POST', `/tasks/${taskId}/retry-push`),

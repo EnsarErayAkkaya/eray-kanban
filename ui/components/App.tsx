@@ -1,11 +1,14 @@
 import { useCallback, useState } from 'react';
 import type { Task } from '@shared/task';
+import { usageTotals } from '../state/boardState';
 import { useBoard } from '../state/useBoard';
 import { Board } from './Board';
 import { ProjectForm } from './ProjectForm';
 import { ReviewPanel } from './ReviewPanel';
 import type { CardActionId } from './TaskCard';
 import { TaskForm } from './TaskForm';
+import { TemplatesEditor } from './TemplatesEditor';
+import { UsageSummary } from './UsageSummary';
 
 type Panel = 'none' | 'project' | 'settings' | 'task';
 
@@ -68,6 +71,7 @@ export function App() {
         >
           Project settings
         </button>
+        <UsageSummary totals={usageTotals(state.usage, projectId)} />
         <div className="topbar__spacer" />
         <span className={`status${state.connected ? ' status--live' : ''}`}>{state.connected ? 'Live' : 'Offline'}</span>
         <button className="btn" onClick={() => setPanel('project')}>
@@ -109,9 +113,11 @@ export function App() {
           onClose={() => setPanel('none')}
         />
       )}
+      {panel === 'settings' && settingsProject && <TemplatesEditor key={settingsProject.id} projectId={settingsProject.id} />}
       {panel === 'task' && (
         <TaskForm
           projects={state.projects}
+          tasks={state.tasks}
           defaultProjectId={projectId}
           onSubmit={actions.createTask}
           onClose={() => setPanel('none')}

@@ -43,6 +43,7 @@ export function Board({ tasks, projects, showProjectNames, runs, logs, onAction,
   const [dragging, setDragging] = useState<Task | null>(null);
   const [dropTarget, setDropTarget] = useState<TaskStatus | null>(null);
   const projectName = (id: number) => projects.find((p) => p.id === id)?.name ?? `project ${id}`;
+  const byId = new Map(tasks.map((t) => [t.id, t]));
   const dropEvent = (to: TaskStatus) => (dragging ? DROP_EVENTS[dragging.status]?.[to] : undefined);
 
   return (
@@ -79,6 +80,7 @@ export function Board({ tasks, projects, showProjectNames, runs, logs, onAction,
                   task={task}
                   projectName={showProjectNames ? projectName(task.projectId) : null}
                   runs={runs[task.id] ?? []}
+                  dependency={task.dependsOn === null ? null : (byId.get(task.dependsOn) ?? null)}
                   log={logs[task.id] ?? []}
                   draggable={DROP_EVENTS[task.status] !== undefined}
                   onDragStart={setDragging}

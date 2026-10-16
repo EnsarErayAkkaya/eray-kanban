@@ -19,7 +19,7 @@ describe('ProjectService', () => {
     const clock = fakeClock();
     const db = memoryDb();
     tasks = new SqliteTaskRepo(db, clock);
-    service = new ProjectService(new SqliteProjectRepo(db, clock), tasks, probe, new FakeScheduler());
+    service = new ProjectService(new SqliteProjectRepo(db, clock), tasks, probe, new FakeScheduler(), { usageByProject: () => [] });
   });
 
   it('creates a project for a git repo', () => {

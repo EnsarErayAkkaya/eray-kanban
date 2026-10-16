@@ -29,6 +29,10 @@ export function renderFeedbackPrompt(template: string, task: Task, feedback: str
   return renderPrompt(template, { ...taskValues(task), feedback: feedback.trim() });
 }
 
+export function renderAnswerPrompt(template: string, task: Task, answer: string): string {
+  return renderPrompt(template, { ...taskValues(task), answer: answer.trim() });
+}
+
 const FAILURE_OUTPUT_LIMIT = 4_000;
 
 function describeExit(check: CheckResult): string {

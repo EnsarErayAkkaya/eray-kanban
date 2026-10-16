@@ -102,6 +102,11 @@ export class FakeScheduler implements WorkScheduler {
     this.resumed.push([taskId, feedback]);
     return Promise.resolve();
   }
+  readonly answered: Array<[number, string]> = [];
+  resumeWithAnswer(taskId: number, answer: string): Promise<void> {
+    this.answered.push([taskId, answer]);
+    return Promise.resolve();
+  }
   statuses(): ProjectStatus[] {
     return [];
   }

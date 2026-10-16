@@ -39,6 +39,7 @@ export const ReviewChangesSchema = z.object({
 export type ReviewChanges = z.infer<typeof ReviewChangesSchema>;
 
 export const RejectTaskInput = z.object({ feedback: z.string().trim().min(1).max(10_000) }).strict();
+export const AnswerTaskInput = z.object({ answer: z.string().trim().min(1).max(10_000) }).strict();
 
 // Anything left out comes from the project's accept defaults.
 export const AcceptTaskInput = z

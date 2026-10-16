@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Run, RunLogLine } from '@shared/run';
 import type { Task } from '@shared/task';
-import { boardReducer, initialBoardState } from './boardState';
+import { boardReducer, initialBoardState, usageTotals } from './boardState';
 
 const task = (id: number, status: Task['status'] = 'backlog'): Task => ({
   id,
@@ -111,5 +111,38 @@ describe('boardReducer', () => {
     let state = boardReducer(initialBoardState, { type: 'event', event: { type: 'run', run: run(5) } });
     state = boardReducer(state, { type: 'event', event: { type: 'run', run: run(5, 'completed') } });
     expect(state.runs[1]?.map((r) => r.outcome)).toEqual(['completed']);
+  });
+});
+
+describe('usageTotals', () => {
+  const usage = (projectId: number, costUsd: number, numTurns: number) => ({
+    projectId,
+    runs: 2,
+    numTurns,
+    inputTokens: 10,
+    outputTokens: 20,
+    cacheCreationTokens: 30,
+    cacheReadTokens: 40,
+    costUsd,
+  });
+
+  it('sums every project, or picks one', () => {
+    const all = [usage(1, 0.5, 10), usage(2, 0.25, 4)];
+    expect(usageTotals(all, null)).toEqual({
+      runs: 4,
+      numTurns: 14,
+      inputTokens: 20,
+      outputTokens: 40,
+      cacheCreationTokens: 60,
+      cacheReadTokens: 80,
+      costUsd: 0.75,
+    });
+    expect(usageTotals(all, 2)).toMatchObject({ runs: 2, numTurns: 4, costUsd: 0.25 });
+    expect(usageTotals(all, 9).runs).toBe(0);
+  });
+
+  it('replaces the totals when they are reloaded', () => {
+    const state = boardReducer(initialBoardState, { type: 'usageLoaded', usage: [usage(1, 1, 1)] });
+    expect(state.usage).toEqual([usage(1, 1, 1)]);
   });
 });

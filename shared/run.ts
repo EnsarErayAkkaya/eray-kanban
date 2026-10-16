@@ -38,6 +38,19 @@ export const RunSchema = z.object({
 });
 export type Run = z.infer<typeof RunSchema>;
 
+/** Totals over every run of a project's tasks; runs still going count with what they have so far. */
+export const ProjectUsageSchema = z.object({
+  projectId: IdSchema,
+  runs: Count,
+  numTurns: Count,
+  inputTokens: Count,
+  outputTokens: Count,
+  cacheCreationTokens: Count,
+  cacheReadTokens: Count,
+  costUsd: z.number().nonnegative(),
+});
+export type ProjectUsage = z.infer<typeof ProjectUsageSchema>;
+
 export const RunLogLineSchema = z.object({
   runId: IdSchema,
   seq: z.number().int().positive(),

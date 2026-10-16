@@ -4,15 +4,18 @@ import { IdSchema } from '@shared/common';
 import type { BoardEvent } from '@shared/events';
 import { CreateProjectInput, UpdateProjectInput } from '@shared/project';
 import { CreateTaskInput, TaskEventInput, UpdateTaskInput } from '@shared/task';
-import { AcceptTaskInput, RejectTaskInput } from '@shared/review';
+import { CreateTemplateInput, UpdateTemplateInput } from '@shared/template';
+import { AcceptTaskInput, AnswerTaskInput, RejectTaskInput } from '@shared/review';
 import type { ProjectService } from '../services/projectService';
 import type { ReviewService } from '../services/reviewService';
 import type { TaskService } from '../services/taskService';
+import type { TemplateService } from '../services/templateService';
 
 export interface RouteDeps {
   readonly projects: ProjectService;
   readonly tasks: TaskService;
   readonly review: ReviewService;
+  readonly templates: TemplateService;
   readonly subscribe: (listener: (event: BoardEvent) => void) => () => void;
   readonly heartbeatMs: number;
 }
@@ -28,6 +31,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
 
   app.get('/api/projects', async () => projects.list());
   app.get('/api/projects/status', async () => projects.statuses());
+  app.get('/api/projects/usage', async () => projects.usage());
   app.post('/api/projects/:id/check', async (req, reply) => {
     projects.check(IdParams.parse(req.params).id);
     reply.code(202);
@@ -39,6 +43,20 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   });
   app.patch('/api/projects/:id', async (req) => {
     return projects.update(IdParams.parse(req.params).id, UpdateProjectInput.parse(req.body));
+  });
+
+  app.get('/api/projects/:id/templates', async (req) => deps.templates.list(IdParams.parse(req.params).id));
+  app.post('/api/projects/:id/templates', async (req, reply) => {
+    const template = deps.templates.create(IdParams.parse(req.params).id, CreateTemplateInput.parse(req.body));
+    reply.code(201);
+    return template;
+  });
+  app.patch('/api/templates/:id', async (req) => {
+    return deps.templates.update(IdParams.parse(req.params).id, UpdateTemplateInput.parse(req.body));
+  });
+  app.delete('/api/templates/:id', async (req, reply) => {
+    deps.templates.delete(IdParams.parse(req.params).id);
+    reply.code(204);
   });
 
   app.get('/api/tasks', async (req) => tasks.list(TaskQuery.parse(req.query).projectId));
@@ -54,6 +72,9 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   });
   app.post('/api/tasks/:id/reject', async (req) => {
     return deps.review.reject(IdParams.parse(req.params).id, RejectTaskInput.parse(req.body).feedback);
+  });
+  app.post('/api/tasks/:id/answer', async (req) => {
+    return deps.review.answer(IdParams.parse(req.params).id, AnswerTaskInput.parse(req.body).answer);
   });
   app.get('/api/tasks/:id/changes', async (req) => deps.review.changes(IdParams.parse(req.params).id));
   app.get('/api/tasks/:id/checks', async (req) => deps.review.checks(IdParams.parse(req.params).id));

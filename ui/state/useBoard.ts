@@ -10,6 +10,7 @@ export type ActionResult = { readonly ok: true } | { readonly ok: false; readonl
 export type ReviewAction =
   | { readonly kind: 'accept'; readonly options: AcceptOptions }
   | { readonly kind: 'reject'; readonly feedback: string }
+  | { readonly kind: 'answer'; readonly answer: string }
   | { readonly kind: 'cancel' }
   | { readonly kind: 'retryPush' }
   | { readonly kind: 'resolveIssue' };
@@ -20,6 +21,8 @@ function runReviewAction(taskId: number, action: ReviewAction): Promise<Task> {
       return api.accept(taskId, action.options);
     case 'reject':
       return api.reject(taskId, action.feedback);
+    case 'answer':
+      return api.answer(taskId, action.answer);
     case 'cancel':
       return api.cancel(taskId);
     case 'retryPush':
@@ -54,12 +57,26 @@ export function useBoard(): { state: BoardState; actions: BoardActions } {
         .then(([projects, tasks, statuses]) => dispatch({ type: 'loaded', projects, tasks, statuses }))
         .catch((err: unknown) => dispatch({ type: 'error', message: `Could not load the board: ${message(err)}` }));
 
+    // Totals are cheap to recount, so refetch whenever a run ends rather than summing on the client.
+    const loadUsage = () =>
+      api
+        .projectUsage()
+        .then((usage) => dispatch({ type: 'usageLoaded', usage }))
+        .catch((err: unknown) => dispatch({ type: 'error', message: `Could not load cost totals: ${message(err)}` }));
+
     void load();
+    void loadUsage();
     const stream = openBoardStream(
-      (event) => dispatch({ type: 'event', event }),
+      (event) => {
+        dispatch({ type: 'event', event });
+        if (event.type === 'run' && event.run.outcome !== 'running') void loadUsage();
+      },
       (connected) => {
         // Events sent while the stream was down are gone; reload to catch up.
-        if (connected && wasConnected) void load();
+        if (connected && wasConnected) {
+          void load();
+          void loadUsage();
+        }
         if (connected) wasConnected = true;
         dispatch({ type: 'connection', connected });
       },

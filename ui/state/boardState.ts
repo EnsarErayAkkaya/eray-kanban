@@ -1,6 +1,6 @@
 import type { BoardEvent, ProjectStatus } from '@shared/events';
 import type { Project } from '@shared/project';
-import type { Run, RunLogLine } from '@shared/run';
+import type { ProjectUsage, Run, RunLogLine } from '@shared/run';
 import type { Task } from '@shared/task';
 
 const MAX_LOG_LINES = 1_000;
@@ -17,6 +17,7 @@ export interface BoardState {
   readonly logs: Readonly<Record<number, readonly RunLogLine[]>>;
   /** By project id: why its next task cannot start. */
   readonly blocked: Readonly<Record<number, string>>;
+  readonly usage: readonly ProjectUsage[];
 }
 
 export type BoardAction =
@@ -30,6 +31,7 @@ export type BoardAction =
   | { readonly type: 'event'; readonly event: BoardEvent }
   | { readonly type: 'runsLoaded'; readonly taskId: number; readonly runs: readonly Run[] }
   | { readonly type: 'logLoaded'; readonly taskId: number; readonly lines: readonly RunLogLine[] }
+  | { readonly type: 'usageLoaded'; readonly usage: readonly ProjectUsage[] }
   | { readonly type: 'connection'; readonly connected: boolean }
   | { readonly type: 'error'; readonly message: string | null };
 
@@ -42,7 +44,37 @@ export const initialBoardState: BoardState = {
   runs: {},
   logs: {},
   blocked: {},
+  usage: [],
 };
+
+export type UsageTotals = Omit<ProjectUsage, 'projectId'>;
+
+/** One project's totals, or every project's when projectId is null. */
+export function usageTotals(usage: readonly ProjectUsage[], projectId: number | null): UsageTotals {
+  const zero: UsageTotals = {
+    runs: 0,
+    numTurns: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+    costUsd: 0,
+  };
+  return usage
+    .filter((u) => projectId === null || u.projectId === projectId)
+    .reduce(
+      (sum, u) => ({
+        runs: sum.runs + u.runs,
+        numTurns: sum.numTurns + u.numTurns,
+        inputTokens: sum.inputTokens + u.inputTokens,
+        outputTokens: sum.outputTokens + u.outputTokens,
+        cacheCreationTokens: sum.cacheCreationTokens + u.cacheCreationTokens,
+        cacheReadTokens: sum.cacheReadTokens + u.cacheReadTokens,
+        costUsd: sum.costUsd + u.costUsd,
+      }),
+      zero,
+    );
+}
 
 function setBlocked(blocked: Readonly<Record<number, string>>, status: ProjectStatus): Record<number, string> {
   const others = Object.fromEntries(Object.entries(blocked).filter(([id]) => Number(id) !== status.projectId));
@@ -98,6 +130,8 @@ export function boardReducer(state: BoardState, action: BoardAction): BoardState
       return { ...state, runs: { ...state.runs, [action.taskId]: action.runs } };
     case 'logLoaded':
       return { ...state, logs: { ...state.logs, [action.taskId]: mergeLog(state.logs[action.taskId] ?? [], action.lines) } };
+    case 'usageLoaded':
+      return { ...state, usage: action.usage };
     case 'connection':
       return { ...state, connected: action.connected };
     case 'error':

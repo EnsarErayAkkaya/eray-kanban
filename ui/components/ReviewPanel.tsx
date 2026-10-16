@@ -56,6 +56,7 @@ export function ReviewPanel({ task, project, runs, log, onReview, onStop, onClos
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState('');
+  const [answerText, setAnswerText] = useState('');
   const [commit, setCommit] = useState(project?.acceptCommit ?? true);
   const [followup, setFollowup] = useState<NonNullable<AcceptOptions['followup']>>(project?.acceptFollowup ?? 'none');
   const [pushAfterMerge, setPushAfterMerge] = useState(project?.pushAfterMerge ?? false);
@@ -84,6 +85,11 @@ export function ReviewPanel({ task, project, runs, log, onReview, onStop, onClos
   const reject = async (e: FormEvent) => {
     e.preventDefault();
     if (await act({ kind: 'reject', feedback }, false)) setFeedback('');
+  };
+
+  const answer = async (e: FormEvent) => {
+    e.preventDefault();
+    if (await act({ kind: 'answer', answer: answerText }, false)) setAnswerText('');
   };
 
   const inReview = task.status === 'in_review';
@@ -118,9 +124,27 @@ export function ReviewPanel({ task, project, runs, log, onReview, onStop, onClos
           {review === null ? (
             <p className="hint">The agent did not leave a summary.</p>
           ) : review.outcome === 'needs_input' ? (
-            <p>
-              <strong>Question:</strong> {review.question}
-            </p>
+            <>
+              <p>
+                <strong>Question:</strong> {review.question}
+              </p>
+              {task.status === 'needs_input' && (
+                <form onSubmit={(e) => void answer(e)} className="drawer__reject">
+                  <label>
+                    Your answer
+                    <textarea
+                      rows={3}
+                      value={answerText}
+                      onChange={(e) => setAnswerText(e.target.value)}
+                      placeholder="The agent resumes with its context and carries on."
+                    />
+                  </label>
+                  <button className="btn btn--primary" disabled={busy || answerText.trim() === ''}>
+                    Send answer
+                  </button>
+                </form>
+              )}
+            </>
           ) : (
             <>
               <p>{review.summary}</p>

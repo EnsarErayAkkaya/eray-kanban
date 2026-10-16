@@ -56,6 +56,8 @@ interface Props {
   readonly task: Task;
   readonly projectName: string | null;
   readonly runs: readonly Run[];
+  /** The task this one waits for; null when it has none or it is not loaded. */
+  readonly dependency: Task | null;
   readonly log: readonly RunLogLine[];
   readonly draggable: boolean;
   readonly onDragStart: (task: Task) => void;
@@ -66,7 +68,7 @@ interface Props {
 
 const HAS_HISTORY: ReadonlySet<TaskStatus> = new Set(['in_progress', 'needs_input', 'in_review']);
 
-export function TaskCard({ task, projectName, runs, log, draggable, onDragStart, onDragEnd, onAction, onOpenLog }: Props) {
+export function TaskCard({ task, projectName, runs, dependency, log, draggable, onDragStart, onDragEnd, onAction, onOpenLog }: Props) {
   const [logOpen, setLogOpen] = useState(task.status === 'in_progress');
 
   // Once per mount (a card remounts when it changes column); later lines arrive over SSE.
@@ -106,6 +108,13 @@ export function TaskCard({ task, projectName, runs, log, draggable, onDragStart,
         <span>{task.turnLimit} turns max</span>
         {task.visual && <span title={task.routes.join(', ')}>visual · {task.routes.length} routes</span>}
       </div>
+      {(task.status === 'backlog' || task.status === 'todo') && task.dependsOn !== null && dependency?.status !== 'done' && (
+        <div className={`card__waits${dependency?.status === 'cancelled' ? ' card__waits--blocked' : ''}`}>
+          {dependency?.status === 'cancelled'
+            ? `Blocked: #${task.dependsOn} was cancelled, so this task never starts`
+            : `Waits for #${task.dependsOn}${dependency ? `: ${dependency.title}` : ''} to be accepted`}
+        </div>
+      )}
       {lastRun && (
         <div className="card__run">
           Last run {OUTCOME_LABEL[lastRun.outcome]}

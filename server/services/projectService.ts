@@ -1,7 +1,8 @@
 import type { ProjectStatus } from '@shared/events';
 import type { NewProject, Project, ProjectPatch } from '@shared/project';
 import { ConflictError, NotFoundError, ValidationError } from '../domain/errors';
-import type { ProjectRepo, RepoProbe, TaskRepo, WorkScheduler } from './ports';
+import type { ProjectUsage } from '@shared/run';
+import type { ProjectRepo, RepoProbe, RunRepo, TaskRepo, WorkScheduler } from './ports';
 
 function devUrlKey(devUrl: string): string {
   const url = new URL(devUrl);
@@ -14,6 +15,7 @@ export class ProjectService {
     private readonly _tasks: TaskRepo,
     private readonly _probe: RepoProbe,
     private readonly _scheduler: WorkScheduler,
+    private readonly _runs: Pick<RunRepo, 'usageByProject'>,
   ) {}
 
   list(): Project[] {
@@ -22,6 +24,10 @@ export class ProjectService {
 
   statuses(): ProjectStatus[] {
     return this._scheduler.statuses();
+  }
+
+  usage(): ProjectUsage[] {
+    return this._runs.usageByProject();
   }
 
   /** "Check again" after you cleaned the tree or switched branch; the result arrives as a projectStatus event. */

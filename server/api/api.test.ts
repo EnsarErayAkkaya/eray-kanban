@@ -5,10 +5,12 @@ import { EventHub } from '../infra/events/eventHub';
 import { SqliteProjectRepo } from '../infra/sqlite/sqliteProjectRepo';
 import { SqliteRunRepo } from '../infra/sqlite/sqliteRunRepo';
 import { SqliteTaskRepo } from '../infra/sqlite/sqliteTaskRepo';
+import { SqliteTemplateRepo } from '../infra/sqlite/sqliteTemplateRepo';
 import { fakeClock, memoryDb } from '../infra/sqlite/testDb';
 import { ProjectService } from '../services/projectService';
 import { ReviewService } from '../services/reviewService';
 import { TaskService } from '../services/taskService';
+import { TemplateService } from '../services/templateService';
 import { FakeGit, FakeScheduler } from '../services/testFakes';
 import { SqliteCheckRepo } from '../infra/sqlite/sqliteCheckRepo';
 import { SqliteScreenshotRepo } from '../infra/sqlite/sqliteScreenshotRepo';
@@ -27,7 +29,7 @@ describe('HTTP API', () => {
   let runRepo: SqliteRunRepo;
   let shotRepo: SqliteScreenshotRepo;
 
-  const send = (method: 'GET' | 'POST' | 'PATCH', url: string, payload?: object, headers: Record<string, string> = {}) =>
+  const send = (method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: object, headers: Record<string, string> = {}) =>
     app.inject({ method, url, headers: { host: HOST, ...headers }, ...(payload === undefined ? {} : { payload }) });
   const createProject = async () =>
     (await send('POST', '/api/projects', { name: 'shop', repoPath: '/repos/shop', workingBranch: 'develop' })).json();
@@ -47,7 +49,7 @@ describe('HTTP API', () => {
     kicked = scheduler.kicked;
     app = buildServer(
       {
-        projects: new ProjectService(projects, tasks, { isGitRepo: (p) => p.startsWith('/repos/') }, scheduler),
+        projects: new ProjectService(projects, tasks, { isGitRepo: (p) => p.startsWith('/repos/') }, scheduler, runs),
         tasks: new TaskService(projects, tasks, runs, scheduler, hub),
         review: new ReviewService({
           projects,
@@ -61,6 +63,7 @@ describe('HTTP API', () => {
           scheduler,
           events: hub,
         }),
+        templates: new TemplateService(projects, new SqliteTemplateRepo(db, clock)),
         subscribe: (l) => hub.subscribe(l),
         heartbeatMs: 60_000,
       },
@@ -161,6 +164,46 @@ describe('HTTP API', () => {
       const res = await send('POST', `/api/tasks/${task.id}/reject`, { feedback: 'Use a toggle' });
       expect(res.statusCode).toBe(409);
       expect(res.json().error).toBe('Only a task in review can be rejected');
+    });
+
+    it('creates, lists, updates and deletes templates per project', async () => {
+      const { id: projectId } = await createProject();
+      const created = await send('POST', `/api/projects/${projectId}/templates`, { name: 'Bug fix', model: 'opus', turnLimit: 40 });
+      expect(created.statusCode).toBe(201);
+      const template = created.json();
+      expect(template).toMatchObject({ projectId, name: 'Bug fix', titlePrefix: '', visual: false, model: 'opus', turnLimit: 40 });
+
+      expect((await send('POST', `/api/projects/${projectId}/templates`, { name: 'Bug fix' })).statusCode).toBe(409);
+      expect((await send('POST', `/api/projects/${projectId}/templates`, { name: 'x', routes: ['settings'] })).statusCode).toBe(400);
+      expect((await send('POST', `/api/projects/${projectId}/templates`, { name: 'x', projectId: 2 })).statusCode).toBe(400);
+      expect((await send('POST', '/api/projects/999/templates', { name: 'x' })).statusCode).toBe(404);
+
+      const patched = await send('PATCH', `/api/templates/${template.id}`, { visual: true, routes: ['/'], model: null });
+      expect(patched.json()).toMatchObject({ visual: true, routes: ['/'], model: null, turnLimit: 40 });
+      expect((await send('GET', `/api/projects/${projectId}/templates`)).json()).toHaveLength(1);
+
+      expect((await send('DELETE', `/api/templates/${template.id}`)).statusCode).toBe(204);
+      expect((await send('DELETE', `/api/templates/${template.id}`)).statusCode).toBe(404);
+      expect((await send('GET', `/api/projects/${projectId}/templates`)).json()).toEqual([]);
+    });
+
+    it('totals usage per project', async () => {
+      const { id: projectId } = await createProject();
+      const task = await createTask(projectId);
+      runRepo.start({ taskId: task.id, sessionId: 's', kind: 'initial', model: 'sonnet', turnLimit: 30, input: 'x' });
+      const res = await send('GET', '/api/projects/usage');
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual([expect.objectContaining({ projectId, runs: 1, costUsd: 0 })]);
+    });
+
+    it('validates an answer and refuses tasks not waiting for input', async () => {
+      const { id: projectId } = await createProject();
+      const task = await createTask(projectId);
+      expect((await send('POST', `/api/tasks/${task.id}/answer`, { answer: '' })).statusCode).toBe(400);
+      expect((await send('POST', `/api/tasks/${task.id}/answer`, { answer: 'x', extra: 1 })).statusCode).toBe(400);
+      const res = await send('POST', `/api/tasks/${task.id}/answer`, { answer: '/settings' });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe('Only a task waiting for input can be answered');
     });
   });
 
