@@ -7,12 +7,13 @@ import { transition } from '../domain/taskMachine';
 import { SqliteProjectRepo } from '../infra/sqlite/sqliteProjectRepo';
 import { SqliteCheckRepo } from '../infra/sqlite/sqliteCheckRepo';
 import { SqliteRunRepo } from '../infra/sqlite/sqliteRunRepo';
+import { SqliteScreenshotRepo } from '../infra/sqlite/sqliteScreenshotRepo';
 import { SqliteSnapshotRepo } from '../infra/sqlite/sqliteSnapshotRepo';
 import { SqliteTaskRepo } from '../infra/sqlite/sqliteTaskRepo';
 import { fakeClock, memoryDb, newTask, seedProject } from '../infra/sqlite/testDb';
 import type { AgentEvent, AgentExit, AgentPort, AgentRequest, AgentResult, Logger } from './ports';
 import { Scheduler } from './scheduler';
-import { FakeAdapter, FakeGit, SNAPSHOT, failedCheck, passedCheck } from './testFakes';
+import { FakeAdapter, FakeGit, FakeNotifier, SNAPSHOT, failedCheck, passedCheck } from './testFakes';
 
 // Repos run on in-memory SQLite; the agent, git, board events and logger are fakes.
 type Script = (onEvent: (e: AgentEvent) => void, signal: AbortSignal) => Promise<AgentExit>;
@@ -71,6 +72,8 @@ describe('Scheduler', () => {
   let checks: SqliteCheckRepo;
   let adapter: FakeAdapter;
   let projectRepo: SqliteProjectRepo;
+  let shots: SqliteScreenshotRepo;
+  let notifier: FakeNotifier;
   let scheduler: Scheduler;
 
   const todo = (overrides: Parameters<typeof newTask>[1] = {}, projectId = project.id): Task =>
@@ -95,6 +98,8 @@ describe('Scheduler', () => {
     checks = new SqliteCheckRepo(db);
     adapter = new FakeAdapter();
     projectRepo = projects;
+    shots = new SqliteScreenshotRepo(db, clock);
+    notifier = new FakeNotifier();
     const log: Logger = { info: () => undefined, error: (msg) => errors.push(msg) };
     scheduler = new Scheduler(
       {
@@ -106,6 +111,8 @@ describe('Scheduler', () => {
         agent,
         git,
         adapters: { web: adapter, generic: adapter },
+        screenshots: shots,
+        notifier,
         events: { publish: (e) => events.push(e) },
         log,
       },
@@ -555,6 +562,74 @@ describe('Scheduler', () => {
         { command: 'checks', exitCode: null, passed: false, timedOut: false, durationMs: 0, output: 'npm not found' },
       ]);
       expect(statusOf(task.id)).toBe('in_review');
+    });
+  });
+
+  describe('screenshots', () => {
+    it('captures a visual task after its checks, on the run that goes to review', async () => {
+      projectRepo.update(project.id, { checkCommands: ['npm run lint'], screenshotSizes: ['desktop', 'mobile'] });
+      adapter.queue.push([failedCheck('npm run lint')]);
+      const task = todo({ visual: true, routes: ['/', '/settings'] });
+      await scheduler.kick(project.id);
+
+      const fixRun = runs.listByTask(task.id)[1];
+      expect(adapter.shotTargets).toEqual([{ taskId: task.id, runId: fixRun?.id, routes: ['/', '/settings'] }]);
+      expect(shots.listByTask(task.id)).toHaveLength(4);
+      expect(logTexts(task.id)).toContain('system: Screenshots: 4 taken');
+      expect(statusOf(task.id)).toBe('in_review');
+    });
+
+    it('skips tasks that are not visual or have no routes', async () => {
+      const plain = todo();
+      await scheduler.kick(project.id);
+      tasks.applyStatusChange(transition(tasks.get(plain.id) ?? plain, 'accept'));
+      todo({ visual: true, routes: [] });
+      await scheduler.kick(project.id);
+      expect(adapter.shotTargets).toEqual([]);
+    });
+
+    it('records failed captures and still reaches review', async () => {
+      adapter.shotError = 'Nothing answers at http://localhost:3000, and no dev command is set';
+      const task = todo({ visual: true, routes: ['/'] });
+      await scheduler.kick(project.id);
+      expect(shots.listByTask(task.id)[0]).toMatchObject({ hasImage: false, error: adapter.shotError });
+      expect(logTexts(task.id).at(-1)).toContain('Screenshots: 0 taken, 1 failed');
+      expect(statusOf(task.id)).toBe('in_review');
+    });
+
+    it('takes none after a stop', async () => {
+      agent.script = waitForAbort;
+      const task = todo({ visual: true, routes: ['/'] });
+      const worker = scheduler.kick(project.id);
+      await settle();
+      scheduler.stop(task.id);
+      await worker;
+      expect(adapter.shotTargets).toEqual([]);
+    });
+  });
+
+  describe('notifications', () => {
+    it('tells you when a task is ready for review', async () => {
+      const task = todo({ title: 'Add settings page' });
+      await scheduler.kick(project.id);
+      expect(notifier.sent).toEqual([[`Task #${task.id} is ready for review`, 'Add settings page · web-app']]);
+    });
+
+    it('tells you when the agent needs an answer', async () => {
+      agent.script = finishWith({ kind: 'result', result: result(fence({ outcome: 'needs_input', question: 'Which?' })) });
+      const task = todo();
+      await scheduler.kick(project.id);
+      expect(notifier.sent[0]?.[0]).toBe(`Task #${task.id} needs your answer`);
+    });
+
+    it('stays quiet when a cancel moved the task during the run', async () => {
+      const task = todo();
+      agent.script = async () => {
+        tasks.applyStatusChange(transition(tasks.get(task.id) ?? task, 'cancel'));
+        return { kind: 'result', result: result(DONE) };
+      };
+      await scheduler.kick(project.id);
+      expect(notifier.sent).toEqual([]);
     });
   });
 });

@@ -104,6 +104,7 @@ export function TaskCard({ task, projectName, runs, log, draggable, onDragStart,
         {projectName && <span>{projectName}</span>}
         <span>{task.model}</span>
         <span>{task.turnLimit} turns max</span>
+        {task.visual && <span title={task.routes.join(', ')}>visual · {task.routes.length} routes</span>}
       </div>
       {lastRun && (
         <div className="card__run">

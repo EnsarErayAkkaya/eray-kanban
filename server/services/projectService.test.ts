@@ -32,6 +32,15 @@ describe('ProjectService', () => {
     expect(() => service.update(service.create(input('/repos/shop')).id, { repoPath: '/tmp' })).toThrow(ValidationError);
   });
 
+  it('refuses a dev URL another project already uses, localhost and 127.0.0.1 alike', () => {
+    service.create({ ...input('/repos/shop'), devUrl: 'http://localhost:3000' });
+    const api = { ...input('/repos/api'), name: 'api' };
+    expect(() => service.create({ ...api, devUrl: 'http://127.0.0.1:3000' })).toThrow('shop already uses this dev server address');
+    const created = service.create({ ...api, devUrl: 'http://127.0.0.1:3001' });
+    expect(() => service.update(created.id, { devUrl: 'http://localhost:3000/app' })).toThrow(ConflictError);
+    expect(service.update(created.id, { devUrl: 'http://127.0.0.1:3001/' }).devUrl).toBe('http://127.0.0.1:3001/');
+  });
+
   it('refuses to move the repo while a task is active', () => {
     const project = service.create(input('/repos/shop'));
     const task = tasks.create(newTask(project.id));

@@ -7,9 +7,12 @@ import type {
   GitPort,
   GuardResult,
   MergeResult,
+  Notifier,
   ProjectAdapter,
   PushResult,
   RepoSnapshot,
+  Shot,
+  ShotTarget,
   RepoStatus,
   RollbackResult,
   SnapshotResult,
@@ -39,7 +42,10 @@ export const failedCheck = (command: string, output = 'error TS2322: wrong type'
 export class FakeAdapter implements ProjectAdapter {
   readonly queue: CheckResult[][] = [];
   readonly signals: AbortSignal[] = [];
+  readonly shotTargets: ShotTarget[] = [];
   onCheck: () => void = () => undefined;
+  /** null: one good shot per route and size. */
+  shotError: string | null = null;
   check(project: Project, signal: AbortSignal): Promise<CheckResult[]> {
     this.signals.push(signal);
     this.onCheck();
@@ -47,6 +53,28 @@ export class FakeAdapter implements ProjectAdapter {
   }
   get calls(): number {
     return this.signals.length;
+  }
+  screenshots(project: Project, target: ShotTarget): Promise<Shot[]> {
+    this.shotTargets.push(target);
+    return Promise.resolve(
+      project.screenshotSizes.flatMap((size) =>
+        target.routes.map((route) => ({
+          route,
+          size,
+          width: 1280,
+          height: 800,
+          file: this.shotError ? null : `${target.taskId}/${target.runId}/${size}${route.replace(/\//g, '_')}.png`,
+          error: this.shotError,
+        })),
+      ),
+    );
+  }
+}
+
+export class FakeNotifier implements Notifier {
+  readonly sent: Array<[string, string]> = [];
+  notify(title: string, message: string): void {
+    this.sent.push([title, message]);
   }
 }
 

@@ -15,9 +15,12 @@ import type {
   GitPort,
   Logger,
   NewLogLine,
+  Notifier,
   ProjectRepo,
   RunEnd,
   RunRepo,
+  ScreenshotRepo,
+  Shot,
   SnapshotRepo,
   TaskRepo,
   WorkScheduler,
@@ -31,9 +34,11 @@ export interface SchedulerDeps {
   readonly runs: RunRepo;
   readonly snapshots: SnapshotRepo;
   readonly checks: CheckRepo;
+  readonly screenshots: ScreenshotRepo;
   readonly agent: AgentPort;
   readonly git: GitPort;
   readonly adapters: AdapterRegistry;
+  readonly notifier: Notifier;
   readonly events: BoardEventSink;
   readonly log: Logger;
 }
@@ -232,11 +237,15 @@ export class Scheduler implements WorkScheduler {
         const run = await this._runAgent(project, task, step, signal);
         await this._guard(project, task.id, run.runId);
         if (run.event !== 'submit' || !CHECKED_OUTCOMES.has(run.outcome) || signal.aborted) {
-          return this._settle(task.id, run.event);
+          return this._settle(project, task.id, run.event);
         }
         const failed = (await this._runChecks(project, task.id, run.runId, signal)).filter((r) => !r.passed);
         const fixPass = failed.length > 0 && project.autoFix && step.kind !== 'check_fix' && run.outcome === 'completed';
-        if (!fixPass || signal.aborted) return this._settle(task.id, 'submit');
+        if (!fixPass || signal.aborted) {
+          // Screenshots come last so they show the code exactly as it will be reviewed.
+          await this._takeScreenshots(project, task.id, run.runId, signal);
+          return this._settle(project, task.id, 'submit');
+        }
 
         this._appendLog(task.id, run.runId, { kind: 'system', text: 'Checks failed; resuming once so the agent can fix them' });
         step = {
@@ -334,10 +343,38 @@ export class Scheduler implements WorkScheduler {
     return results;
   }
 
+  private async _takeScreenshots(project: Project, taskId: number, runId: number, signal: AbortSignal): Promise<void> {
+    const { tasks, adapters, screenshots, log } = this._deps;
+    const task = tasks.get(taskId);
+    if (!task?.visual || task.routes.length === 0 || signal.aborted) return;
+    const count = task.routes.length * project.screenshotSizes.length;
+    this._appendLog(taskId, runId, { kind: 'system', text: `Taking ${count} screenshots` });
+
+    let shots: readonly Shot[];
+    try {
+      shots = await adapters[project.type].screenshots(project, { taskId, runId, routes: task.routes }, signal);
+    } catch (err) {
+      // Adapters report problems as shots; a throw here is a bug, so log it and still reach review.
+      log.error(`Screenshots for task ${taskId} failed`, err);
+      shots = [];
+    }
+    if (shots.length === 0) {
+      this._appendLog(taskId, runId, { kind: 'error', text: 'No screenshots: this project type cannot take them' });
+      return;
+    }
+    screenshots.save(runId, shots);
+    const failed = shots.filter((s) => s.file === null);
+    const detail = failed.length ? `, ${failed.length} failed: ${failed[0]?.error ?? ''}` : '';
+    this._appendLog(taskId, runId, { kind: failed.length ? 'error' : 'system', text: `Screenshots: ${shots.length - failed.length} taken${detail}` });
+  }
+
   // A cancel may have moved the task meanwhile; only an in-progress task moves on from here.
-  private _settle(taskId: number, event: TaskEvent): void {
+  private _settle(project: Project, taskId: number, event: TaskEvent): void {
     const current = this._deps.tasks.get(taskId);
-    if (current?.status === 'in_progress') this._move(current, event);
+    if (current?.status !== 'in_progress') return;
+    const moved = this._move(current, event);
+    const title = moved.status === 'needs_input' ? `Task #${moved.id} needs your answer` : `Task #${moved.id} is ready for review`;
+    this._deps.notifier.notify(title, `${moved.title} · ${project.name}`);
   }
 
   // Invariant 1: agents never write to git. The deny-list is not airtight, so check what actually happened.

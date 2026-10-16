@@ -57,6 +57,12 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   });
   app.get('/api/tasks/:id/changes', async (req) => deps.review.changes(IdParams.parse(req.params).id));
   app.get('/api/tasks/:id/checks', async (req) => deps.review.checks(IdParams.parse(req.params).id));
+  app.get('/api/tasks/:id/screenshots', async (req) => deps.review.screenshots(IdParams.parse(req.params).id));
+  app.get('/api/screenshots/:id/image', async (req, reply) => {
+    const image = deps.review.screenshotImage(IdParams.parse(req.params).id);
+    // Files never change once taken, so the browser may keep them.
+    return reply.type('image/png').header('cache-control', 'private, max-age=86400').send(image);
+  });
   app.post('/api/tasks/:id/accept', async (req) => {
     return deps.review.accept(IdParams.parse(req.params).id, AcceptTaskInput.parse(req.body ?? {}));
   });

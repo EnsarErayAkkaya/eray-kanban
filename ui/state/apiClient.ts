@@ -4,6 +4,7 @@ import { type BoardEvent, BoardEventSchema, ProjectStatusSchema } from '@shared/
 import { type CreateProjectInput, ProjectSchema, type UpdateProjectInput } from '@shared/project';
 import { type AcceptOptions, ReviewChangesSchema } from '@shared/review';
 import { RunLogLineSchema, RunSchema } from '@shared/run';
+import { ScreenshotSchema } from '@shared/screenshot';
 import { type CreateTaskInput, TaskSchema } from '@shared/task';
 import type { TaskEvent } from '@shared/taskStatus';
 
@@ -55,6 +56,8 @@ export const api = {
   updateProject: (projectId: number, patch: ProjectPatchDraft) => call(ProjectSchema, 'PATCH', `/projects/${projectId}`, patch),
   changes: (taskId: number) => call(ReviewChangesSchema, 'GET', `/tasks/${taskId}/changes`),
   checks: (taskId: number) => call(z.array(RunChecksSchema), 'GET', `/tasks/${taskId}/checks`),
+  screenshots: (taskId: number) => call(z.array(ScreenshotSchema), 'GET', `/tasks/${taskId}/screenshots`),
+  screenshotUrl: (screenshotId: number) => `/api/screenshots/${screenshotId}/image`,
   tasks: () => call(z.array(TaskSchema), 'GET', '/tasks'),
   createTask: (draft: TaskDraft) => call(TaskSchema, 'POST', '/tasks', draft),
   sendEvent: (taskId: number, event: TaskEvent) => call(TaskSchema, 'POST', `/tasks/${taskId}/events`, { event }),

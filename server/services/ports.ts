@@ -1,7 +1,8 @@
 import type { CheckResult, RunChecks } from '@shared/check';
 import type { Model } from '@shared/common';
 import type { BoardEvent, ProjectStatus } from '@shared/events';
-import type { NewProject, PROJECT_TYPES, Project, ProjectPatch } from '@shared/project';
+import type { NewProject, PROJECT_TYPES, Project, ProjectPatch, ScreenshotSize } from '@shared/project';
+import type { Screenshot } from '@shared/screenshot';
 import type { LogKind, Run, RunKind, RunLogLine, RunOutcome } from '@shared/run';
 import type { ReviewJson } from '@shared/review';
 import type { GitIssue, Task, TaskPatch } from '@shared/task';
@@ -224,10 +225,44 @@ export interface GitPort {
   mergeInto(repo: string, source: string, target: string, opts: { readonly push: boolean }): Promise<MergeResult>;
 }
 
-// How the orchestrator checks (and, for web, later screenshots) one kind of project.
+export interface ShotTarget {
+  readonly taskId: number;
+  readonly runId: number;
+  readonly routes: readonly string[];
+}
+
+export interface Shot {
+  readonly route: string;
+  readonly size: ScreenshotSize;
+  readonly width: number;
+  readonly height: number;
+  /** Relative to the screenshots folder; null when nothing could be captured. */
+  readonly file: string | null;
+  readonly error: string | null;
+}
+
+// How the orchestrator checks and screenshots one kind of project.
 export interface ProjectAdapter {
   /** Runs the project's check commands in its repo; an empty list when it has none. */
   check(project: Project, signal: AbortSignal): Promise<CheckResult[]>;
+  /** One shot per route and size; problems come back as shots with an error, never as a throw. */
+  screenshots(project: Project, target: ShotTarget, signal: AbortSignal): Promise<Shot[]>;
+}
+
+export interface ScreenshotRepo {
+  save(runId: number, shots: readonly Shot[]): Screenshot[];
+  listByTask(taskId: number): Screenshot[];
+  /** The stored file for one screenshot, relative to the screenshots folder. */
+  fileOf(id: number): string | null | undefined;
+}
+
+export interface ScreenshotFiles {
+  /** null when the file is missing or would resolve outside the screenshots folder. */
+  read(file: string): Buffer | null;
+}
+
+export interface Notifier {
+  notify(title: string, message: string): void;
 }
 
 // A new project type is one new entry here, never a branch on project.type.

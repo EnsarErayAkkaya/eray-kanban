@@ -7,6 +7,7 @@ import { IllegalTransitionError, type TaskEvent, transition } from '../domain/ta
 import { SqliteProjectRepo } from '../infra/sqlite/sqliteProjectRepo';
 import { SqliteCheckRepo } from '../infra/sqlite/sqliteCheckRepo';
 import { SqliteRunRepo } from '../infra/sqlite/sqliteRunRepo';
+import { SqliteScreenshotRepo } from '../infra/sqlite/sqliteScreenshotRepo';
 import { SqliteSnapshotRepo } from '../infra/sqlite/sqliteSnapshotRepo';
 import { SqliteTaskRepo } from '../infra/sqlite/sqliteTaskRepo';
 import { fakeClock, memoryDb, newTask, seedProject } from '../infra/sqlite/testDb';
@@ -55,6 +56,8 @@ describe('ReviewService', () => {
       tasks,
       runs,
       checks,
+      screenshots: new SqliteScreenshotRepo(db, clock),
+      screenshotFiles: { read: () => null },
       snapshots,
       git,
       scheduler,

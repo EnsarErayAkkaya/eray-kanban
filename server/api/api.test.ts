@@ -11,17 +11,21 @@ import { ReviewService } from '../services/reviewService';
 import { TaskService } from '../services/taskService';
 import { FakeGit, FakeScheduler } from '../services/testFakes';
 import { SqliteCheckRepo } from '../infra/sqlite/sqliteCheckRepo';
+import { SqliteScreenshotRepo } from '../infra/sqlite/sqliteScreenshotRepo';
 import { SqliteSnapshotRepo } from '../infra/sqlite/sqliteSnapshotRepo';
 import { buildServer } from './buildServer';
 
 const API_PORT = 4317;
 const UI_PORT = 5173;
 const HOST = `127.0.0.1:${API_PORT}`;
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 describe('HTTP API', () => {
   let app: FastifyInstance;
   let kicked: number[];
   let scheduler: FakeScheduler;
+  let runRepo: SqliteRunRepo;
+  let shotRepo: SqliteScreenshotRepo;
 
   const send = (method: 'GET' | 'POST' | 'PATCH', url: string, payload?: object, headers: Record<string, string> = {}) =>
     app.inject({ method, url, headers: { host: HOST, ...headers }, ...(payload === undefined ? {} : { payload }) });
@@ -36,6 +40,8 @@ describe('HTTP API', () => {
     const projects = new SqliteProjectRepo(db, clock);
     const tasks = new SqliteTaskRepo(db, clock);
     const runs = new SqliteRunRepo(db, clock);
+    runRepo = runs;
+    shotRepo = new SqliteScreenshotRepo(db, clock);
     const hub = new EventHub();
     scheduler = new FakeScheduler();
     kicked = scheduler.kicked;
@@ -48,6 +54,8 @@ describe('HTTP API', () => {
           tasks,
           runs,
           checks: new SqliteCheckRepo(db),
+          screenshots: shotRepo,
+          screenshotFiles: { read: (file) => (file === '1/1/1-root-desktop.png' ? PNG : null) },
           snapshots: new SqliteSnapshotRepo(db, clock),
           git: new FakeGit(),
           scheduler,
@@ -153,6 +161,28 @@ describe('HTTP API', () => {
       const res = await send('POST', `/api/tasks/${task.id}/reject`, { feedback: 'Use a toggle' });
       expect(res.statusCode).toBe(409);
       expect(res.json().error).toBe('Only a task in review can be rejected');
+    });
+  });
+
+  describe('screenshots', () => {
+    it('lists a task screenshots and serves the image as PNG', async () => {
+      const { id: projectId } = await createProject();
+      const task = await createTask(projectId);
+      const run = runRepo.start({ taskId: task.id, sessionId: 's', kind: 'initial', model: 'sonnet', turnLimit: 30, input: 'x' });
+      const [good, missing] = shotRepo.save(run.id, [
+        { route: '/', size: 'desktop', width: 1280, height: 800, file: '1/1/1-root-desktop.png', error: null },
+        { route: '/x', size: 'desktop', width: 1280, height: 800, file: null, error: 'timeout' },
+      ]);
+
+      const list = (await send('GET', `/api/tasks/${task.id}/screenshots`)).json();
+      expect(list.map((s: { hasImage: boolean }) => s.hasImage)).toEqual([true, false]);
+
+      const image = await send('GET', `/api/screenshots/${good?.id}/image`);
+      expect(image.statusCode).toBe(200);
+      expect(image.headers['content-type']).toBe('image/png');
+      expect(image.rawPayload).toEqual(PNG);
+      expect((await send('GET', `/api/screenshots/${missing?.id}/image`)).statusCode).toBe(404);
+      expect((await send('GET', '/api/screenshots/999/image')).statusCode).toBe(404);
     });
   });
 

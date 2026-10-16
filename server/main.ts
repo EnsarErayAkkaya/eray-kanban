@@ -4,17 +4,22 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GenericAdapter } from './adapters/generic/genericAdapter';
 import { CommandRunner } from './adapters/shared/commandRunner';
+import { DevServerManager } from './adapters/web/devServer';
+import { Screenshotter } from './adapters/web/screenshotter';
 import { WebAdapter } from './adapters/web/webAdapter';
 import { buildServer } from './api/buildServer';
 import { ClaudeCliAgent } from './infra/claudeCli/claudeCliAgent';
 import { EventHub } from './infra/events/eventHub';
 import { FsRepoProbe } from './infra/fs/repoProbe';
+import { FsScreenshotFiles } from './infra/fs/screenshotFiles';
+import { MacNotifier, SilentNotifier } from './infra/notify/macNotifier';
 import { GitService } from './infra/git/gitService';
 import { ProcessSupervisor } from './infra/process/processSupervisor';
 import { MIGRATIONS_DIR, openDatabase } from './infra/sqlite/database';
 import { SqliteCheckRepo } from './infra/sqlite/sqliteCheckRepo';
 import { SqliteProjectRepo } from './infra/sqlite/sqliteProjectRepo';
 import { SqliteRunRepo } from './infra/sqlite/sqliteRunRepo';
+import { SqliteScreenshotRepo } from './infra/sqlite/sqliteScreenshotRepo';
 import { SqliteSnapshotRepo } from './infra/sqlite/sqliteSnapshotRepo';
 import { SqliteTaskRepo } from './infra/sqlite/sqliteTaskRepo';
 import type { AdapterRegistry, Logger } from './services/ports';
@@ -28,6 +33,8 @@ const HOST = '127.0.0.1';
 const PORT = Number(process.env.KANBAN_PORT ?? 4317);
 const UI_DEV_PORT = Number(process.env.KANBAN_UI_PORT ?? 5173);
 const DATA_DIR = process.env.KANBAN_DATA_DIR ?? fileURLToPath(new URL('../data/', import.meta.url));
+const SCREENSHOTS_DIR = process.env.KANBAN_SCREENSHOTS_DIR ?? fileURLToPath(new URL('../screenshots/', import.meta.url));
+const NOTIFY = process.env.KANBAN_NOTIFY !== '0';
 const prompt = (name: string) => fileURLToPath(new URL(`./services/prompts/${name}`, import.meta.url));
 const RUN_TIMEOUT_MS = Number(process.env.KANBAN_RUN_TIMEOUT_MS ?? 30 * 60_000);
 
@@ -50,8 +57,12 @@ async function main(): Promise<void> {
   const snapshotRepo = new SqliteSnapshotRepo(db, clock);
   const checkRepo = new SqliteCheckRepo(db);
   const git = new GitService(supervisor);
+  const screenshotRepo = new SqliteScreenshotRepo(db, clock);
   const commands = new CommandRunner(supervisor);
-  const adapters: AdapterRegistry = { web: new WebAdapter(commands), generic: new GenericAdapter(commands) };
+  const adapters: AdapterRegistry = {
+    web: new WebAdapter(commands, new DevServerManager(supervisor), new Screenshotter(), SCREENSHOTS_DIR),
+    generic: new GenericAdapter(commands),
+  };
   const scheduler = new Scheduler(
     {
       projects: projectRepo,
@@ -59,9 +70,11 @@ async function main(): Promise<void> {
       runs: runRepo,
       snapshots: snapshotRepo,
       checks: checkRepo,
+      screenshots: screenshotRepo,
       agent: new ClaudeCliAgent(supervisor),
       git,
       adapters,
+      notifier: NOTIFY ? new MacNotifier(supervisor, log) : new SilentNotifier(),
       events: hub,
       log,
     },
@@ -83,6 +96,8 @@ async function main(): Promise<void> {
         tasks: taskRepo,
         runs: runRepo,
         checks: checkRepo,
+        screenshots: screenshotRepo,
+        screenshotFiles: new FsScreenshotFiles(SCREENSHOTS_DIR),
         snapshots: snapshotRepo,
         git,
         scheduler,

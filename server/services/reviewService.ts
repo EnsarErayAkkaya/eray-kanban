@@ -1,6 +1,7 @@
 import type { RunChecks } from '@shared/check';
 import type { Project } from '@shared/project';
 import type { AcceptOptions, ReviewChanges } from '@shared/review';
+import type { Screenshot } from '@shared/screenshot';
 import type { Task } from '@shared/task';
 import { ConflictError, NotFoundError, ValidationError } from '../domain/errors';
 import { type TaskEvent, occupiesProject, transition } from '../domain/taskMachine';
@@ -11,6 +12,8 @@ import type {
   GitPort,
   ProjectRepo,
   RunRepo,
+  ScreenshotFiles,
+  ScreenshotRepo,
   SnapshotRepo,
   TaskGitIssue,
   TaskRepo,
@@ -22,6 +25,8 @@ export interface ReviewDeps {
   readonly tasks: TaskRepo;
   readonly runs: RunRepo;
   readonly checks: CheckRepo;
+  readonly screenshots: ScreenshotRepo;
+  readonly screenshotFiles: ScreenshotFiles;
   readonly snapshots: SnapshotRepo;
   readonly git: GitPort;
   readonly scheduler: WorkScheduler;
@@ -52,6 +57,18 @@ export class ReviewService {
   checks(taskId: number): RunChecks[] {
     this._require(taskId);
     return this._deps.checks.listByTask(taskId);
+  }
+
+  screenshots(taskId: number): Screenshot[] {
+    this._require(taskId);
+    return this._deps.screenshots.listByTask(taskId);
+  }
+
+  screenshotImage(id: number): Buffer {
+    const file = this._deps.screenshots.fileOf(id);
+    const image = file ? this._deps.screenshotFiles.read(file) : null;
+    if (!image) throw new NotFoundError('screenshot', id);
+    return image;
   }
 
   /** The same session resumes with the feedback, so the agent keeps its context. */

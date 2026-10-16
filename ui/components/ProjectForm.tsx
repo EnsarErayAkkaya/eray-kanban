@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from 'react';
 import { MODELS } from '@shared/common';
-import { ACCEPT_FOLLOWUPS, type Project } from '@shared/project';
+import { ACCEPT_FOLLOWUPS, type Project, SCREENSHOT_SIZES, type ScreenshotSize } from '@shared/project';
 import type { ProjectDraft } from '../state/apiClient';
 import type { ActionResult } from '../state/useBoard';
 
@@ -9,6 +9,10 @@ const FOLLOWUP_LABEL: Readonly<Record<(typeof ACCEPT_FOLLOWUPS)[number], string>
   push: 'push the working branch',
   merge: 'merge into the merge target',
 };
+
+const SIZE_NAMES = Object.keys(SCREENSHOT_SIZES) as ScreenshotSize[];
+// Desktop only fits a desktop web app; add the others when the project also targets them.
+const SIZE_LABEL: Readonly<Record<ScreenshotSize, string>> = { desktop: 'Desktop', tablet: 'Tablet', mobile: 'Mobile' };
 
 const lines = (value: string) =>
   value
@@ -46,6 +50,9 @@ export function ProjectForm({ project, onSubmit, onClose }: Props) {
       allowedCommands: lines(text('allowedCommands')),
       checkCommands: lines(text('checkCommands')),
       autoFix: form.get('autoFix') === 'on',
+      devCommand: text('devCommand') || null,
+      devUrl: text('devUrl') || null,
+      screenshotSizes: SIZE_NAMES.filter((s) => form.get(`size-${s}`) === 'on'),
     });
     setBusy(false);
     if (result.ok) onClose();
@@ -144,6 +151,32 @@ export function ProjectForm({ project, onSubmit, onClose }: Props) {
           <input type="checkbox" name="autoFix" defaultChecked={project?.autoFix ?? true} />
           When checks fail, let the agent try once to fix them before review
         </label>
+      </fieldset>
+
+      <fieldset className="panel__group">
+        <legend>Screenshots for visual tasks</legend>
+        <div className="row">
+          <label>
+            Dev server URL
+            <input name="devUrl" placeholder="http://localhost:3000" defaultValue={project?.devUrl ?? ''} />
+          </label>
+          <label>
+            Dev command
+            <input name="devCommand" placeholder="npm run dev" defaultValue={project?.devCommand ?? ''} />
+          </label>
+        </div>
+        <small className="hint">
+          If something already answers at the URL it is used as it is; otherwise the dev command is started and stopped
+          again afterwards.
+        </small>
+        <div className="row">
+          {SIZE_NAMES.map((s) => (
+            <label key={s} className="check">
+              <input type="checkbox" name={`size-${s}`} defaultChecked={(project?.screenshotSizes ?? ['desktop']).includes(s)} />
+              {SIZE_LABEL[s]} ({SCREENSHOT_SIZES[s].width}px)
+            </label>
+          ))}
+        </div>
       </fieldset>
       {error && <p className="form-error">{error}</p>}
       <div className="panel__actions">

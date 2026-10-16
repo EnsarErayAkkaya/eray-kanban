@@ -3,6 +3,11 @@ import type { NewProject, Project, ProjectPatch } from '@shared/project';
 import { ConflictError, NotFoundError, ValidationError } from '../domain/errors';
 import type { ProjectRepo, RepoProbe, TaskRepo, WorkScheduler } from './ports';
 
+function devUrlKey(devUrl: string): string {
+  const url = new URL(devUrl);
+  return `${url.protocol}${url.port || (url.protocol === 'https:' ? '443' : '80')}`;
+}
+
 export class ProjectService {
   constructor(
     private readonly _projects: ProjectRepo,
@@ -27,6 +32,7 @@ export class ProjectService {
 
   create(input: NewProject): Project {
     this._requireGitRepo(input.repoPath);
+    this._requireOwnDevUrl(input.devUrl, null);
     return this._projects.create(input);
   }
 
@@ -36,7 +42,16 @@ export class ProjectService {
       this._requireGitRepo(patch.repoPath);
       if (this._tasks.activeTask(id)) throw new ConflictError('Cannot move the repo while a task is active');
     }
+    if (patch.devUrl !== undefined) this._requireOwnDevUrl(patch.devUrl, id);
     return this._projects.update(id, patch);
+  }
+
+  // Two projects on one port would screenshot each other's app; localhost, 127.0.0.1 and ::1 count as one.
+  private _requireOwnDevUrl(devUrl: string | null, selfId: number | null): void {
+    if (devUrl === null) return;
+    const key = devUrlKey(devUrl);
+    const other = this._projects.list().find((p) => p.id !== selfId && p.devUrl !== null && devUrlKey(p.devUrl) === key);
+    if (other) throw new ConflictError(`${other.name} already uses this dev server address`);
   }
 
   private _requireGitRepo(path: string): void {

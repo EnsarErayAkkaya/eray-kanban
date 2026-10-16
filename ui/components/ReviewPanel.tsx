@@ -2,11 +2,13 @@ import { type FormEvent, useEffect, useState } from 'react';
 import type { Project } from '@shared/project';
 import type { AcceptOptions } from '@shared/review';
 import type { Run, RunLogLine } from '@shared/run';
+import type { Screenshot } from '@shared/screenshot';
 import type { Task } from '@shared/task';
 import type { ActionResult, ReviewAction } from '../state/useBoard';
 import { api } from '../state/apiClient';
 import { useVersionedLoad } from '../state/useVersionedLoad';
 import { ChecksView } from './ChecksView';
+import { ScreenshotLightbox, ScreenshotsView } from './ScreenshotsView';
 import { ConfirmButton } from './ConfirmButton';
 import { DiffView } from './DiffView';
 import { LogView } from './LogView';
@@ -45,6 +47,10 @@ export function ReviewPanel({ task, project, runs, log, onReview, onStop, onClos
   const { data: checks } = useVersionedLoad(() => api.checks(task.id), version);
   const latestChecks = checks?.at(-1);
   const checkedRun = runs.find((r) => r.id === latestChecks?.runId);
+  const { data: allShots } = useVersionedLoad(() => api.screenshots(task.id), version);
+  const shotRunId = allShots?.at(-1)?.runId;
+  const shots = allShots?.filter((s) => s.runId === shotRunId) ?? [];
+  const [openShot, setOpenShot] = useState<Screenshot | null>(null);
   const review = [...runs].reverse().find((r) => r.review !== null)?.review ?? null;
 
   const [busy, setBusy] = useState(false);
@@ -55,10 +61,15 @@ export function ReviewPanel({ task, project, runs, log, onReview, onStop, onClos
   const [pushAfterMerge, setPushAfterMerge] = useState(project?.pushAfterMerge ?? false);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    // Escape closes the enlarged screenshot first, then the panel.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (openShot) setOpenShot(null);
+      else onClose();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, openShot]);
 
   const act = async (action: ReviewAction, closeOnSuccess: boolean) => {
     setBusy(true);
@@ -130,6 +141,19 @@ export function ReviewPanel({ task, project, runs, log, onReview, onStop, onClos
             </>
           )}
         </section>
+
+        {task.visual && (
+          <section className="drawer__section">
+            <h3>Screenshots</h3>
+            {shots.length === 0 ? (
+              <p className="hint">
+                {task.status === 'in_progress' ? 'Taken after the run and its checks.' : 'No screenshots for this task yet.'}
+              </p>
+            ) : (
+              <ScreenshotsView shots={shots} imageUrl={api.screenshotUrl} onOpen={setOpenShot} />
+            )}
+          </section>
+        )}
 
         {latestChecks && (
           <section className="drawer__section">
@@ -270,6 +294,7 @@ export function ReviewPanel({ task, project, runs, log, onReview, onStop, onClos
           </details>
         </section>
       </aside>
+      {openShot && <ScreenshotLightbox shot={openShot} imageUrl={api.screenshotUrl} onClose={() => setOpenShot(null)} />}
     </div>
   );
 }

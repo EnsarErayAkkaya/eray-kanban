@@ -29,6 +29,11 @@ export function TaskForm({ projects, defaultProjectId, onSubmit, onClose }: Prop
       description: text('description'),
       acceptanceCriteria: text('acceptanceCriteria'),
       priority: text('priority') as TaskDraft['priority'],
+      visual: form.get('visual') === 'on',
+      routes: text('routes')
+        .split('\n')
+        .map((r) => r.trim())
+        .filter(Boolean),
       ...(model ? { model: model as TaskDraft['model'] } : {}),
       ...(turnLimit ? { turnLimit: Number(turnLimit) } : {}),
     });
@@ -85,6 +90,18 @@ export function TaskForm({ projects, defaultProjectId, onSubmit, onClose }: Prop
         Acceptance criteria
         <textarea name="acceptanceCriteria" rows={3} placeholder="- One check per line" />
       </label>
+      <fieldset className="panel__group">
+        <legend>Screenshots</legend>
+        <label className="check">
+          <input type="checkbox" name="visual" />
+          Visual task: screenshot these pages for the review
+        </label>
+        <label>
+          Routes, one per line
+          <textarea name="routes" rows={2} placeholder={'/\n/settings'} />
+          <small>Taken at the sizes in the project settings, after the checks.</small>
+        </label>
+      </fieldset>
       <p className="hint">New tasks start in Backlog. Drag one to Todo when it is ready for the agent.</p>
       {error && <p className="form-error">{error}</p>}
       <div className="panel__actions">
