@@ -19,13 +19,13 @@ A local kanban where I create tasks per project, one Claude Code agent per proje
 **Non-goals**
 
 - No manager or CEO agents, no agent-to-agent delegation
-- No cloud hosting or multi-user access; it runs on my Mac
+- No cloud hosting or multi-user access; it runs on my machine (macOS, Windows or Linux)
 - No mobile simulators
 - No automatic merge-conflict resolution
 
 ## Architecture
 
-Everything runs on my Mac: a browser UI, one local server, and one headless Claude Code process per project.
+Everything runs on my machine: a browser UI, one local server, and one headless Claude Code process per project.
 
 &#91;embedded content: architecture · UI, orchestrator, one worker per project\]
 

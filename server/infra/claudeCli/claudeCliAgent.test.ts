@@ -53,7 +53,7 @@ describe('ClaudeCliAgent', () => {
     fs.writeFileSync(path.join(repo, 'CLAUDE.md'), '# rules');
     const { texts } = await runAgent({});
     fs.rmSync(path.join(repo, 'CLAUDE.md'));
-    expect(texts.find((t) => t.startsWith('ARGS:'))).toContain(`--append-system-prompt-file ${repo}/CLAUDE.md`);
+    expect(texts.find((t) => t.startsWith('ARGS:'))).toContain(`--append-system-prompt-file ${path.join(repo, 'CLAUDE.md')}`);
   });
 
   it('reports a crash with the stderr tail when no result came', async () => {

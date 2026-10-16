@@ -30,6 +30,9 @@ export const SCREENSHOT_SIZES = {
 export type ScreenshotSize = keyof typeof SCREENSHOT_SIZES;
 const SIZE_NAMES = Object.keys(SCREENSHOT_SIZES) as [ScreenshotSize, ...ScreenshotSize[]];
 
+// POSIX /…, Windows C:\… or C:/…, and UNC \\server\share. Shared with the UI, so no node:path.
+const ABSOLUTE_PATH = /^(\/|[A-Za-z]:[\\/]|\\\\[^\\]+\\[^\\]+)/;
+
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 // Screenshots only ever load the project's own local dev server.
 const DevUrlSchema = z
@@ -38,7 +41,7 @@ const DevUrlSchema = z
 
 const fields = {
   name: z.string().trim().min(1).max(80),
-  repoPath: z.string().trim().startsWith('/', 'must be an absolute path'),
+  repoPath: z.string().trim().regex(ABSOLUTE_PATH, 'must be an absolute path'),
   type: z.enum(PROJECT_TYPES),
   workingBranch: BranchSchema,
   mergeTarget: BranchSchema.nullable(),

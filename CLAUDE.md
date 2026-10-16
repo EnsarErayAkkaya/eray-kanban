@@ -1,6 +1,6 @@
 # CLAUDE.md — Agent Kanban rules
 
-Local tool: a kanban board where tasks are created per project, one headless Claude Code agent per project runs them, and nothing reaches git until the user accepts a review. Runs only on the user's Mac. Read this file fully before any task. The rules below are mandatory.
+Local tool: a kanban board where tasks are created per project, one headless Claude Code agent per project runs them, and nothing reaches git until the user accepts a review. Runs locally on the user's machine: macOS, Windows or Linux. Read this file fully before any task. The rules below are mandatory.
 
 ## 1. Stack
 - **TypeScript** everywhere, `strict: true`. No `any` and no `@ts-ignore` without a one-line reason.
@@ -35,6 +35,7 @@ shared/        # types and zod schemas shared by server and UI
   - New project types or agent backends come as new adapters, not as `if`/`switch` chains on type.
 - **Wiring:** constructor injection from one composition root (`server/main.ts`). No singletons, no module-level mutable state.
 - **State machine:** all task state changes go through `domain/taskMachine.ts`. No other code writes `task.status`.
+- **Platforms:** OS differences live only in infra: `ProcessPlatform` (`posixProcessPlatform.ts`, `windowsProcessPlatform.ts`) and one notifier per OS, chosen in `main.ts`. Use `path.join`, never hard-coded `/` or `sh`; tests run on all three OSes.
 - **Validation:** validate every API input, and the agent's review JSON, with zod schemas from `shared/`.
 
 ### Naming

@@ -127,7 +127,9 @@ describe('ProcessSupervisor', () => {
     });
     await waitFor(() => pid > 0);
     own.killAll();
-    expect((await exit).signal).toBe('SIGKILL');
+    // Windows reports a forced kill as an exit code, not a signal.
+    expect((await exit).code === 0).toBe(false);
+    expect(isAlive(pid)).toBe(false);
   });
 
   it('captures raw stdout, NUL bytes included', async () => {

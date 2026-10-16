@@ -74,6 +74,12 @@ describe('project schemas', () => {
 
   it('requires an absolute repo path', () => {
     expect(CreateProjectInput.safeParse({ ...project, repoPath: 'repos/shop' }).success).toBe(false);
+    for (const repoPath of ['C:\\repos\\shop', 'c:/repos/shop', '\\\\server\\share\\shop']) {
+      expect(CreateProjectInput.safeParse({ ...project, repoPath }).success).toBe(true);
+    }
+    for (const repoPath of ['C:repos', '\\repos\\shop', 'shop\\repo']) {
+      expect(CreateProjectInput.safeParse({ ...project, repoPath }).success).toBe(false);
+    }
   });
 
   it('does not fill defaults on update and rejects unknown fields', () => {

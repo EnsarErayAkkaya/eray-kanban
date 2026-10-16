@@ -68,7 +68,7 @@ export function ProjectForm({ project, onSubmit, onClose }: Props) {
       </label>
       <label>
         Repo path
-        <input name="repoPath" required placeholder="/Users/you/Repos/my-app" defaultValue={project?.repoPath} />
+        <input name="repoPath" required placeholder="/home/you/repos/my-app or C:\Users\you\repos\my-app" defaultValue={project?.repoPath} />
       </label>
       <div className="row">
         <label>

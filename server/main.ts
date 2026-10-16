@@ -12,8 +12,12 @@ import { ClaudeCliAgent } from './infra/claudeCli/claudeCliAgent';
 import { EventHub } from './infra/events/eventHub';
 import { FsRepoProbe } from './infra/fs/repoProbe';
 import { FsScreenshotFiles } from './infra/fs/screenshotFiles';
-import { MacNotifier, SilentNotifier } from './infra/notify/macNotifier';
+import { LinuxNotifier } from './infra/notify/linuxNotifier';
+import { MacNotifier } from './infra/notify/macNotifier';
+import { SilentNotifier } from './infra/notify/silentNotifier';
+import { WindowsNotifier } from './infra/notify/windowsNotifier';
 import { GitService } from './infra/git/gitService';
+import { hostProcessPlatform } from './infra/process/processPlatform';
 import { ProcessSupervisor } from './infra/process/processSupervisor';
 import { MIGRATIONS_DIR, openDatabase } from './infra/sqlite/database';
 import { SqliteCheckRepo } from './infra/sqlite/sqliteCheckRepo';
@@ -22,7 +26,7 @@ import { SqliteRunRepo } from './infra/sqlite/sqliteRunRepo';
 import { SqliteScreenshotRepo } from './infra/sqlite/sqliteScreenshotRepo';
 import { SqliteSnapshotRepo } from './infra/sqlite/sqliteSnapshotRepo';
 import { SqliteTaskRepo } from './infra/sqlite/sqliteTaskRepo';
-import type { AdapterRegistry, Logger } from './services/ports';
+import type { AdapterRegistry, Logger, Notifier } from './services/ports';
 import { ProjectService } from './services/projectService';
 import { ReviewService } from './services/reviewService';
 import { Scheduler } from './services/scheduler';
@@ -37,6 +41,11 @@ const SCREENSHOTS_DIR = process.env.KANBAN_SCREENSHOTS_DIR ?? fileURLToPath(new 
 const NOTIFY = process.env.KANBAN_NOTIFY !== '0';
 const prompt = (name: string) => fileURLToPath(new URL(`./services/prompts/${name}`, import.meta.url));
 const RUN_TIMEOUT_MS = Number(process.env.KANBAN_RUN_TIMEOUT_MS ?? 30 * 60_000);
+const NOTIFIERS: Partial<Record<NodeJS.Platform, new (supervisor: ProcessSupervisor, log: Logger) => Notifier>> = {
+  darwin: MacNotifier,
+  linux: LinuxNotifier,
+  win32: WindowsNotifier,
+};
 
 async function main(): Promise<void> {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -46,7 +55,8 @@ async function main(): Promise<void> {
   const taskRepo = new SqliteTaskRepo(db, clock);
   const runRepo = new SqliteRunRepo(db, clock);
 
-  const supervisor = new ProcessSupervisor();
+  const supervisor = new ProcessSupervisor(5_000, hostProcessPlatform());
+  const HostNotifier = NOTIFY ? NOTIFIERS[process.platform] : undefined;
   const hub = new EventHub();
   // The scheduler needs a logger before the server that owns it exists.
   const logRef: { current?: Logger } = {};
@@ -74,7 +84,7 @@ async function main(): Promise<void> {
       agent: new ClaudeCliAgent(supervisor),
       git,
       adapters,
-      notifier: NOTIFY ? new MacNotifier(supervisor, log) : new SilentNotifier(),
+      notifier: HostNotifier ? new HostNotifier(supervisor, log) : new SilentNotifier(),
       events: hub,
       log,
     },

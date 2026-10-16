@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { AgentRequest } from '../../services/ports';
 import { buildClaudeArgs } from './claudeArgs';
@@ -64,7 +65,7 @@ describe('buildClaudeArgs', () => {
 
   it("passes the project's CLAUDE.md, which --restricted would skip", () => {
     expect(valuesOf(buildClaudeArgs(request, { hasClaudeMd: true }), '--append-system-prompt-file')).toEqual([
-      '/repos/shop/CLAUDE.md',
+      path.join('/repos/shop', 'CLAUDE.md'),
     ]);
     expect(buildClaudeArgs(request, { hasClaudeMd: false })).not.toContain('--append-system-prompt-file');
   });

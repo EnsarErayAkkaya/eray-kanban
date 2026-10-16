@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CreateProjectInput, type Project } from '@shared/project';
 import type { Shot } from '../../services/ports';
@@ -52,7 +53,7 @@ describe('WebAdapter.screenshots', () => {
       baseUrl: 'http://localhost:3000',
       routes: ['/', '/settings'],
       sizes: ['desktop', 'mobile'],
-      dir: '/data/screenshots/7/3',
+      dir: path.join('/data/screenshots', '7', '3'),
       relativeDir: '7/3',
     });
   });

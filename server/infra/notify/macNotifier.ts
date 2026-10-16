@@ -27,7 +27,3 @@ export class MacNotifier implements Notifier {
       });
   }
 }
-
-export class SilentNotifier implements Notifier {
-  notify(): void {}
-}

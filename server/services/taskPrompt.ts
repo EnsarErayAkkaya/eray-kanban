@@ -5,7 +5,9 @@ import type { Task } from '@shared/task';
 // so task text that happens to contain {{...}} is never expanded.
 export function renderPrompt(template: string, values: Readonly<Record<string, string>>): string {
   const value = (key: string) => (Object.hasOwn(values, key) ? values[key] : undefined);
+  // Git may check templates out with CRLF on Windows; prompts are always LF.
   return template
+    .replace(/\r\n/g, '\n')
     .replace(/\{\{#(\w+)\}\}([\s\S]*?)\{\{\/\1\}\}\n?/g, (_, key: string, block: string) => (value(key) ? block : ''))
     .replace(/\{\{(\w+)\}\}/g, (match, key: string) => value(key) ?? match);
 }

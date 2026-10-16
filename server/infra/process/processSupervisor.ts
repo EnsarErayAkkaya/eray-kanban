@@ -1,6 +1,7 @@
-import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import readline from 'node:readline';
 import type { Readable } from 'node:stream';
+import { hostProcessPlatform, type ProcessPlatform } from './processPlatform';
 
 interface BaseRequest {
   readonly command: string;
@@ -47,14 +48,17 @@ export interface CapturedExit extends ProcessExit {
 
 const STDERR_TAIL_BYTES = 4_000;
 
-// Invariant 9: every process runs in its own process group so a kill reaches whatever it spawned.
+// Invariant 9: a kill reaches the whole process tree, and whatever a process leaves running dies with it.
 export class ProcessSupervisor {
   private readonly _live = new Set<number>();
 
-  constructor(private readonly _killGraceMs = 5_000) {}
+  constructor(
+    private readonly _killGraceMs = 5_000,
+    private readonly _platform: ProcessPlatform = hostProcessPlatform(),
+  ) {}
 
   run(req: SpawnRequest): Promise<ProcessExit> {
-    return this._spawn(req, (stdout) => readline.createInterface({ input: stdout }).on('line', req.onStdoutLine));
+    return this._spawn(req, true, (stdout) => readline.createInterface({ input: stdout }).on('line', req.onStdoutLine));
   }
 
   /** For short commands whose whole output is needed, such as git. */
@@ -62,8 +66,10 @@ export class ProcessSupervisor {
     const chunks: Buffer[] = [];
     let size = 0;
     let truncated = false;
+    // Short commands such as git leave nothing behind, and a thorough reap is slow on Windows.
     const exit = await this._spawn(
       { ...req, signal: new AbortController().signal, onSpawn: () => undefined },
+      false,
       (stdout) =>
         stdout.on('data', (chunk: Buffer) => {
           // Keep draining past the cap so the child never blocks on a full pipe.
@@ -91,25 +97,31 @@ export class ProcessSupervisor {
         output = output.slice(-req.maxOutputBytes);
       }
     };
-    const exit = await this._spawn({ ...req, onSpawn: () => undefined }, (stdout, stderr) => {
+    const exit = await this._spawn({ ...req, onSpawn: () => undefined }, true, (stdout, stderr) => {
       stdout.on('data', keep);
       stderr.on('data', keep);
     });
     return { ...exit, output, outputTruncated: truncated };
   }
 
-  private _spawn(req: BaseRequest, attachStdout: (stdout: Readable, stderr: Readable) => void): Promise<ProcessExit> {
+  private _spawn(
+    req: BaseRequest,
+    thoroughReap: boolean,
+    attachStdout: (stdout: Readable, stderr: Readable) => void,
+  ): Promise<ProcessExit> {
     return new Promise((resolve) => {
       let timedOut = false;
       let cancelled = false;
       let stderr = '';
       let child: ChildProcess;
+      const startedAt = Date.now();
 
       try {
-        child = spawn(req.command, [...req.args], {
+        const launch = this._platform.launch(req.command, req.args, req.env, req.cwd);
+        child = spawn(launch.file, [...launch.args], {
+          ...launch.options,
           cwd: req.cwd,
           env: req.env,
-          detached: true,
           stdio: ['pipe', 'pipe', 'pipe'],
         });
       } catch (err) {
@@ -152,45 +164,30 @@ export class ProcessSupervisor {
         clearTimeout(timer);
         req.signal.removeEventListener('abort', onAbort);
         this._live.delete(pid);
-        // Leftovers in the group (a backgrounded dev server, say) die with the run.
-        signalGroup(pid, 'SIGKILL');
-        resolve({ code, signal, timedOut, cancelled, spawnError: null, stderrTail: stderr.trim() });
+        void this._platform
+          .reap(pid, startedAt, thoroughReap)
+          .then(() => resolve({ code, signal, timedOut, cancelled, spawnError: null, stderrTail: stderr.trim() }));
       });
     });
   }
 
   /** Synchronous so it can run from a process 'exit' handler. */
   killAll(): void {
-    for (const pid of this._live) signalGroup(pid, 'SIGKILL');
+    for (const pid of this._live) this._platform.kill(pid);
     this._live.clear();
   }
 
   killStale(pid: number, commandMustContain: string): boolean {
-    let command: string;
-    try {
-      command = execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' });
-    } catch {
-      return false;
-    }
     // The pid may have been reused by an unrelated process since the crash.
-    if (!command.includes(commandMustContain)) return false;
-    return signalGroup(pid, 'SIGKILL');
+    if (!this._platform.commandLine(pid)?.includes(commandMustContain)) return false;
+    return this._platform.kill(pid);
   }
 
   private _killGroup(pid: number): void {
-    signalGroup(pid, 'SIGTERM');
+    this._platform.terminate(pid);
     setTimeout(() => {
-      if (this._live.has(pid)) signalGroup(pid, 'SIGKILL');
+      if (this._live.has(pid)) this._platform.kill(pid);
     }, this._killGraceMs).unref();
-  }
-}
-
-function signalGroup(pid: number, signal: NodeJS.Signals): boolean {
-  try {
-    process.kill(-pid, signal);
-    return true;
-  } catch {
-    return false;
   }
 }
 

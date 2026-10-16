@@ -11,6 +11,11 @@ const git = new GitService(new ProcessSupervisor(200), DEFAULT_GIT_OPTIONS, HERM
 
 afterEach(cleanupRepos);
 
+// Windows forbids * and : in file names; [ ] still exercise the pathspec escaping there.
+const ON_WINDOWS = process.platform === 'win32';
+const STAR = ON_WINDOWS ? 'star[s].txt' : 'star*.txt';
+const ODD_NAMES = ON_WINDOWS ? ['[ab].txt', 'src/[x].ts'] : [':(top)odd.txt', '[ab].txt', 'src/*.ts'];
+
 const without = (files: Record<string, string>, ...names: string[]) =>
   Object.fromEntries(Object.entries(files).filter(([name]) => !names.includes(name)));
 
@@ -102,7 +107,7 @@ describe('GitService', () => {
       repo.remove('docs/guide.md');
       repo.write('src/new/deep file.ts', 'x');
       repo.write('-rf', 'not an option');
-      repo.write('star*.txt', 'literal');
+      repo.write(STAR, 'literal');
       repo.write('ünïcode.md', 'x');
       repo.write('debug2.log', 'ignored');
 
@@ -111,7 +116,7 @@ describe('GitService', () => {
         { path: 'docs/guide.md', change: 'deleted' },
         { path: 'src/app.ts', change: 'modified' },
         { path: 'src/new/deep file.ts', change: 'added' },
-        { path: 'star*.txt', change: 'added' },
+        { path: STAR, change: 'added' },
         { path: 'ünïcode.md', change: 'added' },
       ]);
     });
@@ -274,13 +279,13 @@ describe('GitService', () => {
       const snapshot = await snap(repo);
       repo.write('src/app.ts', 'export const app = 2;\n');
       repo.remove('docs/guide.md');
-      repo.write('star*.txt', 'literal');
+      repo.write(STAR, 'literal');
       repo.write('build.log', 'ignored, never committed');
 
       const result = await git.commitTouched(repo.dir, snapshot, 'feat(#7): Add thing\n\nSummary from the agent.');
-      expect(result).toMatchObject({ ok: true, files: ['docs/guide.md', 'src/app.ts', 'star*.txt'] });
+      expect(result).toMatchObject({ ok: true, files: ['docs/guide.md', 'src/app.ts', STAR] });
       expect(repo.git('log', '-1', '--format=%B').trim()).toBe('feat(#7): Add thing\n\nSummary from the agent.');
-      expect(repo.git('show', '--name-status', '--format=', 'HEAD')).toBe('D\tdocs/guide.md\nM\tsrc/app.ts\nA\tstar*.txt\n');
+      expect(repo.git('show', '--name-status', '--format=', 'HEAD')).toBe(`D\tdocs/guide.md\nM\tsrc/app.ts\nA\t${STAR}\n`);
       expect(repo.git('status', '--porcelain')).toBe('');
       expect(repo.git('rev-parse', 'HEAD').trim()).toBe(result.ok ? result.sha : '');
     });
@@ -288,17 +293,10 @@ describe('GitService', () => {
     it('stages names with glob and pathspec characters as exact names', async () => {
       const repo = makeRepo();
       const snapshot = await snap(repo);
-      for (const name of ['[ab].txt', ':(top)odd.txt', 'src/*.ts']) repo.write(name, 'x');
+      for (const name of ODD_NAMES) repo.write(name, 'x');
 
-      expect(await git.commitTouched(repo.dir, snapshot, 'msg')).toMatchObject({
-        ok: true,
-        files: [':(top)odd.txt', '[ab].txt', 'src/*.ts'],
-      });
-      expect(repo.git('show', '--name-only', '--format=', 'HEAD').trim().split('\n').sort()).toEqual([
-        ':(top)odd.txt',
-        '[ab].txt',
-        'src/*.ts',
-      ]);
+      expect(await git.commitTouched(repo.dir, snapshot, 'msg')).toMatchObject({ ok: true, files: ODD_NAMES });
+      expect(repo.git('show', '--name-only', '--format=', 'HEAD').trim().split('\n').sort()).toEqual(ODD_NAMES);
       expect(repo.git('status', '--porcelain')).toBe('');
     });
 
