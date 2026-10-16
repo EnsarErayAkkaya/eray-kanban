@@ -11,6 +11,7 @@ import { buildServer } from './api/buildServer';
 import { ClaudeCliAgent } from './infra/claudeCli/claudeCliAgent';
 import { EventHub } from './infra/events/eventHub';
 import { FsRepoProbe } from './infra/fs/repoProbe';
+import { writeControlToken } from './infra/fs/controlToken';
 import { FsScreenshotFiles } from './infra/fs/screenshotFiles';
 import { LinuxNotifier } from './infra/notify/linuxNotifier';
 import { MacNotifier } from './infra/notify/macNotifier';
@@ -41,6 +42,7 @@ const UI_DEV_PORT = Number(process.env.KANBAN_UI_PORT ?? 5173);
 const DATA_DIR = process.env.KANBAN_DATA_DIR ?? fileURLToPath(new URL('../data/', import.meta.url));
 const SCREENSHOTS_DIR = process.env.KANBAN_SCREENSHOTS_DIR ?? fileURLToPath(new URL('../screenshots/', import.meta.url));
 const NOTIFY = process.env.KANBAN_NOTIFY !== '0';
+const UI_DIR = fileURLToPath(new URL('../dist/ui/', import.meta.url));
 const prompt = (name: string) => fileURLToPath(new URL(`./services/prompts/${name}`, import.meta.url));
 const RUN_TIMEOUT_MS = Number(process.env.KANBAN_RUN_TIMEOUT_MS ?? 30 * 60_000);
 const NOTIFIERS: Partial<Record<NodeJS.Platform, new (supervisor: ProcessSupervisor, log: Logger) => Notifier>> = {
@@ -56,6 +58,7 @@ async function main(): Promise<void> {
   const projectRepo = new SqliteProjectRepo(db, clock);
   const taskRepo = new SqliteTaskRepo(db, clock);
   const runRepo = new SqliteRunRepo(db, clock);
+  const control = writeControlToken(DATA_DIR);
 
   const supervisor = new ProcessSupervisor(5_000, hostProcessPlatform());
   const HostNotifier = NOTIFY ? NOTIFIERS[process.platform] : undefined;
@@ -117,21 +120,32 @@ async function main(): Promise<void> {
         events: hub,
       }),
       templates: new TemplateService(projectRepo, new SqliteTemplateRepo(db, clock)),
+      control: { token: control.token, shutdown: () => shutdown() },
       subscribe: (listener) => hub.subscribe(listener),
       heartbeatMs: 25_000,
     },
-    { logger: true, allowedPorts: [PORT, UI_DEV_PORT] },
+    {
+      logger: true,
+      allowedPorts: [PORT, UI_DEV_PORT],
+      uiRoot: fs.existsSync(path.join(UI_DIR, 'index.html')) ? UI_DIR : null,
+    },
   );
   logRef.current = { info: (msg) => app.log.info(msg), error: (msg, err) => app.log.error({ err }, msg) };
 
   // Invariant 9: no agent outlives the server.
-  process.on('exit', () => supervisor.killAll());
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-    process.once(signal, () => {
-      supervisor.killAll();
-      void app.close().finally(() => process.exit(0));
-    });
-  }
+  process.on('exit', () => {
+    supervisor.killAll();
+    control.remove();
+  });
+  let stopping = false;
+  const shutdown = () => {
+    if (stopping) return;
+    stopping = true;
+    supervisor.killAll();
+    void app.close().finally(() => process.exit(0));
+  };
+  // SIGHUP is how Windows reports a closed console window, and Linux a closed terminal.
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.once(signal, shutdown);
 
   scheduler.recoverInterrupted();
   await app.listen({ host: HOST, port: PORT });

@@ -10,12 +10,14 @@ import type { ProjectService } from '../services/projectService';
 import type { ReviewService } from '../services/reviewService';
 import type { TaskService } from '../services/taskService';
 import type { TemplateService } from '../services/templateService';
+import { type ControlDeps, registerControl } from './control';
 
 export interface RouteDeps {
   readonly projects: ProjectService;
   readonly tasks: TaskService;
   readonly review: ReviewService;
   readonly templates: TemplateService;
+  readonly control: ControlDeps;
   readonly subscribe: (listener: (event: BoardEvent) => void) => () => void;
   readonly heartbeatMs: number;
 }
@@ -28,6 +30,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { projects, tasks } = deps;
 
   app.get('/api/health', async () => ({ ok: true }));
+  registerControl(app, deps.control);
 
   app.get('/api/projects', async () => projects.list());
   app.get('/api/projects/status', async () => projects.statuses());

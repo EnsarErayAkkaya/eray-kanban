@@ -10,6 +10,10 @@
     "better-sqlite3": false
   },
   "scripts": {
+    "start": "tsx scripts/start.ts",
+    "dev": "tsx scripts/dev.ts",
+    "stop": "tsx scripts/stop.ts",
+    "shortcut": "tsx scripts/shortcut.ts",
     "dev:server": "tsx watch --tsconfig tsconfig.server.json server/main.ts",
     "dev:ui": "vite",
     "build:ui": "vite build",

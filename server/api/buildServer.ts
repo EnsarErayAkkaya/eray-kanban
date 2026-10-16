@@ -2,11 +2,14 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { toHttpError } from './httpErrors';
 import { localOnly } from './localOnly';
 import { type RouteDeps, registerRoutes } from './routes';
+import { registerStaticUi } from './staticUi';
 
 export interface ServerOptions {
   readonly logger: boolean;
   /** The API port plus the Vite dev server port, whose proxy forwards the browser's Host and Origin. */
   readonly allowedPorts: readonly number[];
+  /** The built UI to serve next to the API; null in development, where Vite serves it. */
+  readonly uiRoot?: string | null;
 }
 
 export function buildServer(deps: RouteDeps, options: ServerOptions): FastifyInstance {
@@ -24,5 +27,6 @@ export function buildServer(deps: RouteDeps, options: ServerOptions): FastifyIns
   });
 
   registerRoutes(app, deps);
+  if (options.uiRoot) registerStaticUi(app, options.uiRoot);
   return app;
 }

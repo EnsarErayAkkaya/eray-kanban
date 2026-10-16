@@ -29,6 +29,8 @@ describe('HTTP API', () => {
   let runRepo: SqliteRunRepo;
   let shotRepo: SqliteScreenshotRepo;
 
+  const CONTROL_TOKEN = 'a'.repeat(64);
+  let shutdowns = 0;
   const send = (method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: object, headers: Record<string, string> = {}) =>
     app.inject({ method, url, headers: { host: HOST, ...headers }, ...(payload === undefined ? {} : { payload }) });
   const createProject = async () =>
@@ -64,6 +66,7 @@ describe('HTTP API', () => {
           events: hub,
         }),
         templates: new TemplateService(projects, new SqliteTemplateRepo(db, clock)),
+        control: { token: CONTROL_TOKEN, shutdown: () => shutdowns++ },
         subscribe: (l) => hub.subscribe(l),
         heartbeatMs: 60_000,
       },
@@ -185,6 +188,22 @@ describe('HTTP API', () => {
       expect((await send('DELETE', `/api/templates/${template.id}`)).statusCode).toBe(204);
       expect((await send('DELETE', `/api/templates/${template.id}`)).statusCode).toBe(404);
       expect((await send('GET', `/api/projects/${projectId}/templates`)).json()).toEqual([]);
+    });
+
+    it('shuts down only for the right control token, after replying', async () => {
+      shutdowns = 0;
+      expect((await send('POST', '/api/shutdown')).statusCode).toBe(403);
+      expect((await send('POST', '/api/shutdown', undefined, { 'x-kanban-token': 'b'.repeat(64) })).statusCode).toBe(403);
+      expect((await send('POST', '/api/shutdown', undefined, { 'x-kanban-token': 'short' })).statusCode).toBe(403);
+      // A page in the browser carries a foreign Origin and never gets as far as the token check.
+      const page = await send('POST', '/api/shutdown', undefined, { 'x-kanban-token': CONTROL_TOKEN, origin: 'http://evil.example' });
+      expect(page.statusCode).toBe(403);
+      expect(shutdowns).toBe(0);
+
+      const ok = await send('POST', '/api/shutdown', undefined, { 'x-kanban-token': CONTROL_TOKEN });
+      expect(ok.statusCode).toBe(202);
+      await new Promise((r) => setImmediate(r));
+      expect(shutdowns).toBe(1);
     });
 
     it('totals usage per project', async () => {
