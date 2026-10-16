@@ -33,6 +33,17 @@ export class StaleStatusError extends Error {
   }
 }
 
+// A git command failed in a way the caller did not plan for (the expected ones come back as results).
+export class GitError extends Error {
+  constructor(
+    readonly command: string,
+    readonly detail: string,
+  ) {
+    super(`git ${command} failed: ${detail}`);
+    this.name = 'GitError';
+  }
+}
+
 export class ProjectBusyError extends Error {
   constructor(readonly projectId: number) {
     super(`Project ${projectId} already has an active task`);

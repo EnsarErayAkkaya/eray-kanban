@@ -1,7 +1,8 @@
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
 import readline from 'node:readline';
+import type { Readable } from 'node:stream';
 
-export interface SpawnRequest {
+interface BaseRequest {
   readonly command: string;
   readonly args: readonly string[];
   readonly cwd: string;
@@ -10,7 +11,14 @@ export interface SpawnRequest {
   readonly timeoutMs: number;
   readonly signal: AbortSignal;
   readonly onSpawn: (pid: number) => void;
+}
+
+export interface SpawnRequest extends BaseRequest {
   readonly onStdoutLine: (line: string) => void;
+}
+
+export interface CaptureRequest extends Omit<BaseRequest, 'signal' | 'onSpawn'> {
+  readonly maxStdoutBytes: number;
 }
 
 export interface ProcessExit {
@@ -22,6 +30,11 @@ export interface ProcessExit {
   readonly stderrTail: string;
 }
 
+export interface CapturedExit extends ProcessExit {
+  readonly stdout: Buffer;
+  readonly stdoutTruncated: boolean;
+}
+
 const STDERR_TAIL_BYTES = 4_000;
 
 // Invariant 9: every process runs in its own process group so a kill reaches whatever it spawned.
@@ -31,6 +44,33 @@ export class ProcessSupervisor {
   constructor(private readonly _killGraceMs = 5_000) {}
 
   run(req: SpawnRequest): Promise<ProcessExit> {
+    return this._spawn(req, (stdout) => readline.createInterface({ input: stdout }).on('line', req.onStdoutLine));
+  }
+
+  /** For short commands whose whole output is needed, such as git. */
+  async capture(req: CaptureRequest): Promise<CapturedExit> {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let truncated = false;
+    const exit = await this._spawn(
+      { ...req, signal: new AbortController().signal, onSpawn: () => undefined },
+      (stdout) =>
+        stdout.on('data', (chunk: Buffer) => {
+          // Keep draining past the cap so the child never blocks on a full pipe.
+          if (size + chunk.length > req.maxStdoutBytes) {
+            truncated = true;
+            chunks.push(chunk.subarray(0, Math.max(0, req.maxStdoutBytes - size)));
+            size = req.maxStdoutBytes;
+          } else if (!truncated) {
+            chunks.push(chunk);
+            size += chunk.length;
+          }
+        }),
+    );
+    return { ...exit, stdout: Buffer.concat(chunks), stdoutTruncated: truncated };
+  }
+
+  private _spawn(req: BaseRequest, attachStdout: (stdout: Readable) => void): Promise<ProcessExit> {
     return new Promise((resolve) => {
       let timedOut = false;
       let cancelled = false;
@@ -72,7 +112,7 @@ export class ProcessSupervisor {
       if (req.signal.aborted) onAbort();
       else req.signal.addEventListener('abort', onAbort, { once: true });
 
-      readline.createInterface({ input: stdout }).on('line', req.onStdoutLine);
+      attachStdout(stdout);
       errStream.on('data', (chunk: Buffer) => {
         stderr = (stderr + chunk.toString()).slice(-STDERR_TAIL_BYTES);
       });

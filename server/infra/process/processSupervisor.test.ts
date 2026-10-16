@@ -130,6 +130,47 @@ describe('ProcessSupervisor', () => {
     expect((await exit).signal).toBe('SIGKILL');
   });
 
+  it('captures raw stdout, NUL bytes included', async () => {
+    const exit = await supervisor.capture({
+      command: process.execPath,
+      args: ['-e', "process.stdout.write('a\\u0000b c\\u0000'); process.stderr.write('note'); process.exit(1)"],
+      cwd: os.tmpdir(),
+      env: process.env,
+      stdin: '',
+      timeoutMs: 5_000,
+      maxStdoutBytes: 1_000,
+    });
+    expect(exit.stdout.toString()).toBe('a\u0000b c\u0000');
+    expect(exit).toMatchObject({ code: 1, stderrTail: 'note', stdoutTruncated: false });
+  });
+
+  it('caps captured stdout but lets the process finish', async () => {
+    const exit = await supervisor.capture({
+      command: process.execPath,
+      args: ['-e', "process.stdout.write('x'.repeat(200_000))"],
+      cwd: os.tmpdir(),
+      env: process.env,
+      stdin: '',
+      timeoutMs: 5_000,
+      maxStdoutBytes: 10,
+    });
+    expect(exit).toMatchObject({ code: 0, stdoutTruncated: true });
+    expect(exit.stdout.toString()).toBe('x'.repeat(10));
+  });
+
+  it('times out a captured command', async () => {
+    const exit = await supervisor.capture({
+      command: process.execPath,
+      args: ['-e', 'setInterval(() => {}, 1000)'],
+      cwd: os.tmpdir(),
+      env: process.env,
+      stdin: '',
+      timeoutMs: 100,
+      maxStdoutBytes: 10,
+    });
+    expect(exit.timedOut).toBe(true);
+  });
+
   it('killStale only kills a pid whose command matches', async () => {
     const run = nodeScript('setInterval(() => {}, 1000) // stale-agent-marker');
     await waitFor(() => run.pid() > 0);

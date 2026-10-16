@@ -121,6 +121,81 @@ export interface AgentPort {
   killOrphan(pid: number, sessionId: string): boolean;
 }
 
+export interface RepoStatus {
+  /** null when HEAD is detached. */
+  readonly branch: string | null;
+  /** null before the first commit. */
+  readonly head: string | null;
+  /** Tracked files with staged or unstaged changes. */
+  readonly changed: readonly string[];
+  /** Untracked files, ignored ones excluded. */
+  readonly untracked: readonly string[];
+}
+
+export interface RepoSnapshot {
+  readonly branch: string;
+  readonly head: string;
+  readonly untracked: readonly string[];
+  /** Empty directories git does not see, so rollback leaves them in place. */
+  readonly emptyDirs: readonly string[];
+}
+
+export type SnapshotResult =
+  | { readonly ok: true; readonly snapshot: RepoSnapshot }
+  | {
+      readonly ok: false;
+      readonly reason: 'dirty' | 'wrong_branch' | 'detached' | 'no_commits';
+      readonly detail: string;
+    };
+
+export type FileChange = 'added' | 'modified' | 'deleted';
+
+export interface TouchedFile {
+  readonly path: string;
+  readonly change: FileChange;
+}
+
+export interface FileDiff extends TouchedFile {
+  readonly patch: string;
+  readonly binary: boolean;
+  /** Cut off at the size limit, or left out once the total limit was reached. */
+  readonly truncated: boolean;
+}
+
+export interface GuardResult {
+  /** Empty when the agent left HEAD, the branch and the index alone. */
+  readonly problems: readonly string[];
+}
+
+export interface RollbackResult {
+  /** Empty when the tree matches the snapshot again. */
+  readonly problems: readonly string[];
+}
+
+export type CommitResult =
+  | { readonly ok: true; readonly sha: string | null; readonly files: readonly string[] }
+  | { readonly ok: false; readonly error: string };
+
+export type PushResult = { readonly ok: true } | { readonly ok: false; readonly error: string };
+
+export type MergeResult =
+  | { readonly ok: true; readonly sha: string; readonly pushed: boolean; readonly pushError: string | null }
+  | { readonly ok: false; readonly conflict: boolean; readonly files: readonly string[]; readonly error: string };
+
+// Invariant 1: the only code that changes git history, and only the orchestrator calls it.
+export interface GitPort {
+  inspect(repo: string): Promise<RepoStatus>;
+  snapshot(repo: string, workingBranch: string): Promise<SnapshotResult>;
+  touchedFiles(repo: string, snapshot: RepoSnapshot): Promise<TouchedFile[]>;
+  diff(repo: string, snapshot: RepoSnapshot, files: readonly TouchedFile[]): Promise<FileDiff[]>;
+  guardCheck(repo: string, snapshot: RepoSnapshot): Promise<GuardResult>;
+  rollback(repo: string, snapshot: RepoSnapshot): Promise<RollbackResult>;
+  /** sha is null when there was nothing left to commit. */
+  commitTouched(repo: string, snapshot: RepoSnapshot, message: string): Promise<CommitResult>;
+  push(repo: string, branch: string): Promise<PushResult>;
+  mergeInto(repo: string, source: string, target: string, opts: { readonly push: boolean }): Promise<MergeResult>;
+}
+
 export interface WorkScheduler {
   kick(projectId: number): Promise<void>;
   stop(taskId: number): boolean;
