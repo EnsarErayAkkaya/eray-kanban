@@ -9,3 +9,17 @@ export const TASK_STATUSES = [
 ] as const;
 
 export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+export const TASK_EVENTS = [
+  'promote',
+  'demote',
+  'start',
+  'askInput',
+  'answer',
+  'submit',
+  'reject',
+  'accept',
+  'cancel',
+] as const;
+
+export type TaskEvent = (typeof TASK_EVENTS)[number];

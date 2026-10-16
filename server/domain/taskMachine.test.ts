@@ -3,10 +3,10 @@ import { TASK_STATUSES, type TaskStatus } from '@shared/taskStatus';
 import {
   IllegalTransitionError,
   TASK_EVENTS,
-  applyEvent,
   canTransition,
   nextStatus,
   occupiesProject,
+  transition,
   type TaskEvent,
 } from './taskMachine';
 
@@ -68,18 +68,15 @@ describe('taskMachine', () => {
     expect(err).toMatchObject({ from: 'done', event: 'reject' });
   });
 
-  describe('applyEvent', () => {
-    it('returns a new task with only the status changed', () => {
-      const task = { id: 't1', title: 'x', status: 'todo' as TaskStatus };
-      const next = applyEvent(task, 'start');
-      expect(next).toEqual({ id: 't1', title: 'x', status: 'in_progress' });
+  describe('transition', () => {
+    it('describes the change without touching the task', () => {
+      const task = { id: 7, status: 'todo' as TaskStatus };
+      expect(transition(task, 'start')).toEqual({ taskId: 7, event: 'start', from: 'todo', to: 'in_progress' });
       expect(task.status).toBe('todo');
     });
 
-    it('throws without returning a task on an illegal event', () => {
-      expect(() => applyEvent({ status: 'backlog' as TaskStatus }, 'accept')).toThrow(
-        IllegalTransitionError,
-      );
+    it('throws on an illegal event', () => {
+      expect(() => transition({ id: 7, status: 'backlog' }, 'accept')).toThrow(IllegalTransitionError);
     });
   });
 

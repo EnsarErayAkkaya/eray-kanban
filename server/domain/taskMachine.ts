@@ -1,18 +1,6 @@
-import type { TaskStatus } from '@shared/taskStatus';
+import type { TaskEvent, TaskStatus } from '@shared/taskStatus';
 
-export const TASK_EVENTS = [
-  'promote',
-  'demote',
-  'start',
-  'askInput',
-  'answer',
-  'submit',
-  'reject',
-  'accept',
-  'cancel',
-] as const;
-
-export type TaskEvent = (typeof TASK_EVENTS)[number];
+export { TASK_EVENTS, type TaskEvent } from '@shared/taskStatus';
 
 interface Transition {
   readonly from: readonly TaskStatus[];
@@ -33,7 +21,15 @@ const TRANSITIONS: Readonly<Record<TaskEvent, Transition>> = {
 };
 
 // Invariant 3: while a task is in one of these, its project runs nothing else.
-const PROJECT_OCCUPYING: readonly TaskStatus[] = ['in_progress', 'needs_input', 'in_review'];
+export const OCCUPYING_STATUSES: readonly TaskStatus[] = ['in_progress', 'needs_input', 'in_review'];
+
+// The only value a repo accepts for writing task.status, so every write is decided here.
+export interface StatusChange {
+  readonly taskId: number;
+  readonly event: TaskEvent;
+  readonly from: TaskStatus;
+  readonly to: TaskStatus;
+}
 
 export class IllegalTransitionError extends Error {
   constructor(
@@ -54,10 +50,13 @@ export function nextStatus(from: TaskStatus, event: TaskEvent): TaskStatus {
   return TRANSITIONS[event].to;
 }
 
-export function applyEvent<T extends { readonly status: TaskStatus }>(task: T, event: TaskEvent): T {
-  return { ...task, status: nextStatus(task.status, event) };
+export function transition(
+  task: { readonly id: number; readonly status: TaskStatus },
+  event: TaskEvent,
+): StatusChange {
+  return { taskId: task.id, event, from: task.status, to: nextStatus(task.status, event) };
 }
 
 export function occupiesProject(status: TaskStatus): boolean {
-  return PROJECT_OCCUPYING.includes(status);
+  return OCCUPYING_STATUSES.includes(status);
 }
