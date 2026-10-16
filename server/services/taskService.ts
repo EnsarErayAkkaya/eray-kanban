@@ -5,8 +5,8 @@ import { ConflictError, NotFoundError, ValidationError } from '../domain/errors'
 import { transition } from '../domain/taskMachine';
 import type { BoardEventSink, ProjectRepo, RunRepo, TaskRepo, WorkScheduler } from './ports';
 
-// The rest come from the scheduler. cancel waits for rollback (M2) before it may touch a started task.
-const BOARD_EVENTS: ReadonlySet<TaskEvent> = new Set(['promote', 'demote', 'cancel', 'accept']);
+// The drag moves. Accept, reject and cancel go through ReviewService; the rest come from the scheduler.
+const BOARD_EVENTS: ReadonlySet<TaskEvent> = new Set(['promote', 'demote']);
 const EDITABLE: ReadonlySet<Task['status']> = new Set(['backlog', 'todo']);
 
 export class TaskService {
@@ -48,15 +48,9 @@ export class TaskService {
 
   applyBoardEvent(id: number, event: TaskEvent): Task {
     if (!BOARD_EVENTS.has(event)) throw new ConflictError(`${event} is not a board action`);
-    const task = this._require(id);
-    if (event === 'cancel' && !EDITABLE.has(task.status)) {
-      throw new ConflictError('Only Backlog and Todo tasks can be cancelled until rollback exists; stop a running one');
-    }
-
-    const updated = this._tasks.applyStatusChange(transition(task, event));
+    const updated = this._tasks.applyStatusChange(transition(this._require(id), event));
     this._events.publish({ type: 'task', task: updated });
-    // A new Todo task or a project leaving review may let that project's worker start.
-    if (event === 'promote' || event === 'accept') void this._scheduler.kick(updated.projectId);
+    if (event === 'promote') void this._scheduler.kick(updated.projectId);
     // kick() may already have started the task, so answer with what is stored now.
     return this._tasks.get(id) ?? updated;
   }

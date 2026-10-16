@@ -113,14 +113,21 @@ describe('SqliteTaskRepo', () => {
 
   it('sets and clears a git issue without touching the status', () => {
     const task = repo.create(newTask(projectId));
-    expect(task).toMatchObject({ gitIssue: null, gitIssueDetail: null, commitSha: null });
-    expect(repo.setGitIssue(task.id, 'push_failed', 'rejected')).toMatchObject({
+    expect(task).toMatchObject({ gitIssue: null, gitIssueDetail: null, pendingPush: null, commitSha: null });
+    expect(repo.setGitIssue(task.id, { kind: 'push_failed', detail: 'rejected', pendingPush: 'develop' })).toMatchObject({
       status: 'backlog',
       gitIssue: 'push_failed',
       gitIssueDetail: 'rejected',
+      pendingPush: 'develop',
     });
-    expect(repo.setGitIssue(task.id, null, 'ignored')).toMatchObject({ gitIssue: null, gitIssueDetail: null });
-    expect(() => repo.setGitIssue(999, null, null)).toThrow(NotFoundError);
+    expect(repo.setGitIssue(task.id, null)).toMatchObject({ gitIssue: null, gitIssueDetail: null, pendingPush: null });
+    expect(() => repo.setGitIssue(999, null)).toThrow(NotFoundError);
+  });
+
+  it('records the commit sha', () => {
+    const task = repo.create(newTask(projectId));
+    expect(repo.setCommitSha(task.id, 'abc123').commitSha).toBe('abc123');
+    expect(() => repo.setCommitSha(999, 'x')).toThrow(NotFoundError);
   });
 
   it('reports the active task of a project', () => {

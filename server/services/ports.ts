@@ -39,7 +39,16 @@ export interface TaskRepo {
   /** Highest priority, then lowest position; skips tasks whose dependency is not done. */
   nextTodo(projectId: number): Task | undefined;
   activeTask(projectId: number): Task | undefined;
-  setGitIssue(id: number, issue: GitIssue | null, detail: string | null): Task;
+  /** null clears the badge. */
+  setGitIssue(id: number, issue: TaskGitIssue | null): Task;
+  setCommitSha(id: number, sha: string): Task;
+}
+
+export interface TaskGitIssue {
+  readonly kind: GitIssue;
+  readonly detail: string;
+  /** Branch that still needs pushing, for Retry push. */
+  readonly pendingPush: string | null;
 }
 
 export interface SnapshotRepo {
@@ -194,6 +203,7 @@ export type MergeResult =
 // Invariant 1: the only code that changes git history, and only the orchestrator calls it.
 export interface GitPort {
   inspect(repo: string): Promise<RepoStatus>;
+  branchExists(repo: string, branch: string): Promise<boolean>;
   snapshot(repo: string, workingBranch: string): Promise<SnapshotResult>;
   touchedFiles(repo: string, snapshot: RepoSnapshot): Promise<TouchedFile[]>;
   diff(repo: string, snapshot: RepoSnapshot, files: readonly TouchedFile[]): Promise<FileDiff[]>;
@@ -208,6 +218,8 @@ export interface GitPort {
 export interface WorkScheduler {
   kick(projectId: number): Promise<void>;
   stop(taskId: number): boolean;
+  /** Stops the run, if any, and resolves once its worker has finished and moved the task on. */
+  stopAndWait(taskId: number): Promise<void>;
   resumeWithFeedback(taskId: number, feedback: string): Promise<void>;
   statuses(): ProjectStatus[];
 }

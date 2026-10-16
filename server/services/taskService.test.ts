@@ -100,27 +100,15 @@ describe('TaskService', () => {
       expect(scheduler.kicked).toEqual([]);
     });
 
-    it('cancels a task that has not started', () => {
-      expect(service.applyBoardEvent(create().id, 'cancel').status).toBe('cancelled');
-    });
-
-    it('refuses to cancel a started task until rollback exists', () => {
-      const task = force(create(), 'promote', 'start', 'submit');
-      expect(() => service.applyBoardEvent(task.id, 'cancel')).toThrow(ConflictError);
-    });
-
-    it('accepts a reviewed task and wakes the project', () => {
-      const task = force(create(), 'promote', 'start', 'submit');
-      expect(service.applyBoardEvent(task.id, 'accept').status).toBe('done');
-      expect(scheduler.kicked).toEqual([project.id]);
-    });
-
-    it.each(['start', 'submit', 'reject', 'askInput', 'answer'] as const)('refuses %s from the board', (event) => {
-      expect(() => service.applyBoardEvent(create().id, event)).toThrow(ConflictError);
-    });
+    it.each(['start', 'submit', 'reject', 'askInput', 'answer', 'accept', 'cancel'] as const)(
+      'refuses %s, which has its own path',
+      (event) => {
+        expect(() => service.applyBoardEvent(create().id, event)).toThrow(ConflictError);
+      },
+    );
 
     it('lets the state machine reject an illegal move', () => {
-      expect(() => service.applyBoardEvent(create().id, 'accept')).toThrow(IllegalTransitionError);
+      expect(() => service.applyBoardEvent(create().id, 'demote')).toThrow(IllegalTransitionError);
     });
   });
 

@@ -57,6 +57,11 @@ describe('buildClaudeArgs', () => {
     }
   });
 
+  it('keeps .env files away from the agent', () => {
+    const denied = valuesOf(buildClaudeArgs(request, { hasClaudeMd: false }), '--disallowedTools');
+    expect(denied).toEqual(expect.arrayContaining(['Read(**/.env*)', 'Edit(**/.env*)', 'Write(**/.env*)']));
+  });
+
   it("passes the project's CLAUDE.md, which --restricted would skip", () => {
     expect(valuesOf(buildClaudeArgs(request, { hasClaudeMd: true }), '--append-system-prompt-file')).toEqual([
       '/repos/shop/CLAUDE.md',

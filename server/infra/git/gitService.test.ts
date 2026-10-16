@@ -28,6 +28,12 @@ describe('GitService', () => {
       expect(status).toEqual({ branch: 'develop', head: repo.git('rev-parse', 'HEAD').trim(), changed: [], untracked: [] });
     });
 
+    it('tells whether a local branch exists', async () => {
+      const repo = makeRepo();
+      expect(await git.branchExists(repo.dir, 'main')).toBe(true);
+      expect(await git.branchExists(repo.dir, 'release')).toBe(false);
+    });
+
     it('lists changed and untracked files', async () => {
       const repo = makeRepo();
       repo.write('src/app.ts', 'changed\n');

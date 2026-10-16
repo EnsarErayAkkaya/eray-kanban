@@ -91,6 +91,13 @@ export class Scheduler implements WorkScheduler {
     return controller !== undefined;
   }
 
+  async stopAndWait(taskId: number): Promise<void> {
+    const task = this._deps.tasks.get(taskId);
+    if (!task) return;
+    this.stop(taskId);
+    await this._workers.get(task.projectId);
+  }
+
   /** Resumes the task's last session with review feedback; the task must already be back in progress. */
   resumeWithFeedback(taskId: number, feedback: string): Promise<void> {
     const task = this._deps.tasks.get(taskId);
@@ -272,9 +279,9 @@ export class Scheduler implements WorkScheduler {
     const task = tasks.get(taskId);
     if (problems.length > 0) {
       for (const problem of problems) this._appendLog(taskId, runId, { kind: 'error', text: `Git guard: ${problem}` });
-      tasks.setGitIssue(taskId, 'guard_tripped', problems.join('; '));
+      tasks.setGitIssue(taskId, { kind: 'guard_tripped', detail: problems.join('; '), pendingPush: null });
     } else if (task?.gitIssue === 'guard_tripped') {
-      tasks.setGitIssue(taskId, null, null);
+      tasks.setGitIssue(taskId, null);
     }
   }
 

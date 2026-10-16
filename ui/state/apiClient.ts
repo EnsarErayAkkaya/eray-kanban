@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { type BoardEvent, BoardEventSchema, ProjectStatusSchema } from '@shared/events';
 import { type CreateProjectInput, ProjectSchema } from '@shared/project';
+import type { AcceptOptions } from '@shared/review';
 import { RunLogLineSchema, RunSchema } from '@shared/run';
 import { type CreateTaskInput, TaskSchema } from '@shared/task';
 import type { TaskEvent } from '@shared/taskStatus';
@@ -44,6 +45,10 @@ export const api = {
   projectStatuses: () => call(z.array(ProjectStatusSchema), 'GET', '/projects/status'),
   checkProject: (projectId: number) => call(z.object({ checking: z.boolean() }), 'POST', `/projects/${projectId}/check`),
   reject: (taskId: number, feedback: string) => call(TaskSchema, 'POST', `/tasks/${taskId}/reject`, { feedback }),
+  accept: (taskId: number, options: AcceptOptions) => call(TaskSchema, 'POST', `/tasks/${taskId}/accept`, options),
+  cancel: (taskId: number) => call(TaskSchema, 'POST', `/tasks/${taskId}/cancel`),
+  retryPush: (taskId: number) => call(TaskSchema, 'POST', `/tasks/${taskId}/retry-push`),
+  resolveIssue: (taskId: number) => call(TaskSchema, 'POST', `/tasks/${taskId}/resolve-issue`),
   createProject: (draft: ProjectDraft) => call(ProjectSchema, 'POST', '/projects', draft),
   tasks: () => call(z.array(TaskSchema), 'GET', '/tasks'),
   createTask: (draft: TaskDraft) => call(TaskSchema, 'POST', '/tasks', draft),

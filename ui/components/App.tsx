@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import type { Task } from '@shared/task';
-import type { TaskEvent } from '@shared/taskStatus';
 import { useBoard } from '../state/useBoard';
 import { Board } from './Board';
 import { ProjectForm } from './ProjectForm';
+import type { CardActionId } from './TaskCard';
 import { TaskForm } from './TaskForm';
 
 type Panel = 'none' | 'project' | 'task';
@@ -14,8 +14,36 @@ export function App() {
   const [panel, setPanel] = useState<Panel>('none');
 
   const visibleTasks = projectId === null ? state.tasks : state.tasks.filter((t) => t.projectId === projectId);
-  const onAction = (task: Task, event: TaskEvent | 'stop') =>
-    void (event === 'stop' ? actions.stop(task.id) : actions.sendEvent(task.id, event));
+  const onAction = (task: Task, action: CardActionId) => {
+    switch (action) {
+      case 'promote':
+      case 'demote':
+        return void actions.sendEvent(task.id, action);
+      case 'stop':
+        return void actions.stop(task.id);
+      case 'cancel':
+        return void actions.review(task.id, { kind: 'cancel' });
+      case 'rollback':
+        // Until the review panel lands, a plain confirm guards the one destructive button.
+        if (window.confirm(`Stop the agent if needed and roll task #${task.id} back to how the repo was before it?`)) {
+          void actions.review(task.id, { kind: 'cancel' });
+        }
+        return;
+      case 'accept':
+        return void actions.review(task.id, { kind: 'accept', options: {} });
+      case 'acceptNoCommit':
+        return void actions.review(task.id, { kind: 'accept', options: { commit: false, followup: 'none' } });
+      case 'reject': {
+        const feedback = window.prompt(`Feedback for the agent on task #${task.id}:`)?.trim();
+        if (feedback) void actions.review(task.id, { kind: 'reject', feedback });
+        return;
+      }
+      case 'retryPush':
+        return void actions.review(task.id, { kind: 'retryPush' });
+      case 'resolveIssue':
+        return void actions.review(task.id, { kind: 'resolveIssue' });
+    }
+  };
 
   return (
     <div className="app">

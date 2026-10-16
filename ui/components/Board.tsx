@@ -2,8 +2,8 @@ import { useState } from 'react';
 import type { Project } from '@shared/project';
 import type { Run, RunLogLine } from '@shared/run';
 import type { Task } from '@shared/task';
-import type { TaskEvent, TaskStatus } from '@shared/taskStatus';
-import { TaskCard } from './TaskCard';
+import type { TaskStatus } from '@shared/taskStatus';
+import { type CardActionId, TaskCard } from './TaskCard';
 
 const COLUMNS: readonly { readonly status: TaskStatus; readonly label: string; readonly hint: string }[] = [
   { status: 'backlog', label: 'Backlog', hint: 'Ideas, not ready for an agent' },
@@ -16,7 +16,7 @@ const COLUMNS: readonly { readonly status: TaskStatus; readonly label: string; r
 ];
 
 // Dragging is only for the moves you make yourself; everything else is buttons or the agent.
-const DROP_EVENTS: Partial<Record<TaskStatus, Partial<Record<TaskStatus, TaskEvent>>>> = {
+const DROP_EVENTS: Partial<Record<TaskStatus, Partial<Record<TaskStatus, CardActionId>>>> = {
   backlog: { todo: 'promote' },
   todo: { backlog: 'demote' },
 };
@@ -35,7 +35,7 @@ interface Props {
   readonly showProjectNames: boolean;
   readonly runs: Readonly<Record<number, readonly Run[]>>;
   readonly logs: Readonly<Record<number, readonly RunLogLine[]>>;
-  readonly onAction: (task: Task, event: TaskEvent | 'stop') => void;
+  readonly onAction: (task: Task, action: CardActionId) => void;
   readonly onOpenLog: (task: Task) => void;
 }
 

@@ -20,6 +20,9 @@ export const DENIED_BASH = [
   'npm publish',
 ] as const;
 
+// Rollback cannot restore ignored files, and env files hold secrets; tested to also hide them from Grep and Glob.
+export const DENIED_FILES = ['Read(**/.env*)', 'Edit(**/.env*)', 'Write(**/.env*)'] as const;
+
 // The prompt goes on stdin, so it never meets argv parsing or the variadic tool flags.
 export function buildClaudeArgs(req: AgentRequest, opts: { hasClaudeMd: boolean }): string[] {
   const bash = req.allowedCommands.length > 0;
@@ -41,6 +44,6 @@ export function buildClaudeArgs(req: AgentRequest, opts: { hasClaudeMd: boolean 
   args.push(req.resume ? '--resume' : '--session-id', req.sessionId);
   args.push('--tools', ...FILE_TOOLS, ...(bash ? ['Bash'] : []));
   args.push('--allowedTools', ...FILE_TOOLS, ...req.allowedCommands.map((cmd) => `Bash(${cmd}:*)`));
-  args.push('--disallowedTools', ...DENIED_BASH.map((cmd) => `Bash(${cmd}:*)`));
+  args.push('--disallowedTools', ...DENIED_BASH.map((cmd) => `Bash(${cmd}:*)`), ...DENIED_FILES);
   return args;
 }

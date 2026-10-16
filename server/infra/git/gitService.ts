@@ -97,6 +97,11 @@ export class GitService implements GitPort {
     };
   }
 
+  async branchExists(repo: string, branch: string): Promise<boolean> {
+    const run = await this._git(repo, ['rev-parse', '-q', '--verify', `refs/heads/${branch}`], { okCodes: [0, 1] });
+    return run.code === 0;
+  }
+
   async snapshot(repo: string, workingBranch: string): Promise<SnapshotResult> {
     const s = await this.inspect(repo);
     if (s.head === null) return { ok: false, reason: 'no_commits', detail: 'The repo has no commits yet' };
@@ -235,8 +240,7 @@ export class GitService implements GitPort {
     const status = await this.inspect(repo);
     if (status.branch !== source) return fail(`Expected to be on ${source}, found ${status.branch ?? 'a detached HEAD'}`);
     if (status.changed.length > 0 || status.untracked.length > 0) return fail('The working tree must be clean to merge');
-    const exists = await this._git(repo, ['rev-parse', '-q', '--verify', `refs/heads/${target}`], { okCodes: [0, 1] });
-    if (exists.code !== 0) return fail(`There is no local branch ${target}`);
+    if (!(await this.branchExists(repo, target))) return fail(`There is no local branch ${target}`);
 
     try {
       await this._git(repo, ['checkout', '-q', target]);
@@ -282,8 +286,7 @@ export class GitService implements GitPort {
   }
 
   private async _requireBranch(repo: string, branch: string): Promise<void> {
-    const run = await this._git(repo, ['rev-parse', '-q', '--verify', `refs/heads/${branch}`], { okCodes: [0, 1] });
-    if (run.code !== 0) throw new GitError('rev-parse', `Branch ${branch} no longer exists`);
+    if (!(await this.branchExists(repo, branch))) throw new GitError('rev-parse', `Branch ${branch} no longer exists`);
   }
 
   private async _unstage(repo: string, files: readonly string[]): Promise<void> {

@@ -1,15 +1,40 @@
 import { useEffect, useMemo, useReducer } from 'react';
+import type { AcceptOptions } from '@shared/review';
+import type { Task } from '@shared/task';
 import type { TaskEvent } from '@shared/taskStatus';
 import { type ProjectDraft, type TaskDraft, api, openBoardStream } from './apiClient';
 import { type BoardState, boardReducer, initialBoardState } from './boardState';
 
 export type ActionResult = { readonly ok: true } | { readonly ok: false; readonly error: string };
 
+export type ReviewAction =
+  | { readonly kind: 'accept'; readonly options: AcceptOptions }
+  | { readonly kind: 'reject'; readonly feedback: string }
+  | { readonly kind: 'cancel' }
+  | { readonly kind: 'retryPush' }
+  | { readonly kind: 'resolveIssue' };
+
+function runReviewAction(taskId: number, action: ReviewAction): Promise<Task> {
+  switch (action.kind) {
+    case 'accept':
+      return api.accept(taskId, action.options);
+    case 'reject':
+      return api.reject(taskId, action.feedback);
+    case 'cancel':
+      return api.cancel(taskId);
+    case 'retryPush':
+      return api.retryPush(taskId);
+    case 'resolveIssue':
+      return api.resolveIssue(taskId);
+  }
+}
+
 export interface BoardActions {
   createProject(draft: ProjectDraft): Promise<ActionResult>;
   createTask(draft: TaskDraft): Promise<ActionResult>;
   sendEvent(taskId: number, event: TaskEvent): Promise<ActionResult>;
   stop(taskId: number): Promise<ActionResult>;
+  review(taskId: number, action: ReviewAction): Promise<ActionResult>;
   loadHistory(taskId: number): Promise<ActionResult>;
   checkProject(projectId: number): Promise<ActionResult>;
   dismissError(): void;
@@ -60,6 +85,8 @@ export function useBoard(): { state: BoardState; actions: BoardActions } {
       sendEvent: (taskId, event) =>
         attempt(async () => dispatch({ type: 'event', event: { type: 'task', task: await api.sendEvent(taskId, event) } }), true),
       stop: (taskId) => attempt(async () => void (await api.stop(taskId)), true),
+      review: (taskId, action) =>
+        attempt(async () => dispatch({ type: 'event', event: { type: 'task', task: await runReviewAction(taskId, action) } }), true),
       loadHistory: (taskId) =>
         attempt(async () => {
           const runs = await api.runs(taskId);

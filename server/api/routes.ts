@@ -4,7 +4,7 @@ import { IdSchema } from '@shared/common';
 import type { BoardEvent } from '@shared/events';
 import { CreateProjectInput, UpdateProjectInput } from '@shared/project';
 import { CreateTaskInput, TaskEventInput, UpdateTaskInput } from '@shared/task';
-import { RejectTaskInput } from '@shared/review';
+import { AcceptTaskInput, RejectTaskInput } from '@shared/review';
 import type { ProjectService } from '../services/projectService';
 import type { ReviewService } from '../services/reviewService';
 import type { TaskService } from '../services/taskService';
@@ -55,6 +55,12 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.post('/api/tasks/:id/reject', async (req) => {
     return deps.review.reject(IdParams.parse(req.params).id, RejectTaskInput.parse(req.body).feedback);
   });
+  app.post('/api/tasks/:id/accept', async (req) => {
+    return deps.review.accept(IdParams.parse(req.params).id, AcceptTaskInput.parse(req.body ?? {}));
+  });
+  app.post('/api/tasks/:id/cancel', async (req) => deps.review.cancel(IdParams.parse(req.params).id));
+  app.post('/api/tasks/:id/retry-push', async (req) => deps.review.retryPush(IdParams.parse(req.params).id));
+  app.post('/api/tasks/:id/resolve-issue', async (req) => deps.review.resolveIssue(IdParams.parse(req.params).id));
   app.post('/api/tasks/:id/stop', async (req, reply) => {
     tasks.stop(IdParams.parse(req.params).id);
     reply.code(202);

@@ -1,8 +1,8 @@
 import type { Database, Statement } from 'better-sqlite3';
-import { type GitIssue, type Task, type TaskPatch, TaskSchema } from '@shared/task';
+import { type Task, type TaskPatch, TaskSchema } from '@shared/task';
 import { ConflictError, NotFoundError, ProjectBusyError, StaleStatusError } from '../../domain/errors';
 import { OCCUPYING_STATUSES, type StatusChange } from '../../domain/taskMachine';
-import type { Clock, NewTask, TaskRepo } from '../../services/ports';
+import type { Clock, NewTask, TaskGitIssue, TaskRepo } from '../../services/ports';
 import { definedOnly, sqliteCode, toFlag } from './sqliteUtil';
 
 interface TaskRow {
@@ -21,6 +21,7 @@ interface TaskRow {
   depends_on: number | null;
   git_issue: string | null;
   git_issue_detail: string | null;
+  pending_push: string | null;
   commit_sha: string | null;
   created_at: string;
   updated_at: string;
@@ -48,6 +49,7 @@ function fromRow(r: TaskRow): Task {
     dependsOn: r.depends_on,
     gitIssue: r.git_issue,
     gitIssueDetail: r.git_issue_detail,
+    pendingPush: r.pending_push,
     commitSha: r.commit_sha,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -79,7 +81,14 @@ export class SqliteTaskRepo implements TaskRepo {
   private readonly _listByProject: Statement<[number], TaskRow>;
   private readonly _nextTodo: Statement<[number], TaskRow>;
   private readonly _active: Statement<[number], TaskRow>;
-  private readonly _setGitIssue: Statement<{ id: number; issue: string | null; detail: string | null; now: string }>;
+  private readonly _setGitIssue: Statement<{
+    id: number;
+    issue: string | null;
+    detail: string | null;
+    pending: string | null;
+    now: string;
+  }>;
+  private readonly _setCommitSha: Statement<{ id: number; sha: string; now: string }>;
 
   constructor(
     db: Database,
@@ -108,9 +117,10 @@ export class SqliteTaskRepo implements TaskRepo {
       ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END, t.position
       LIMIT 1`);
     this._active = db.prepare(`SELECT * FROM tasks WHERE project_id = ? AND status IN (${OCCUPYING_SQL})`);
-    this._setGitIssue = db.prepare(
-      'UPDATE tasks SET git_issue = @issue, git_issue_detail = @detail, updated_at = @now WHERE id = @id',
-    );
+    this._setGitIssue = db.prepare(`
+      UPDATE tasks SET git_issue = @issue, git_issue_detail = @detail, pending_push = @pending, updated_at = @now
+      WHERE id = @id`);
+    this._setCommitSha = db.prepare('UPDATE tasks SET commit_sha = @sha, updated_at = @now WHERE id = @id');
   }
 
   create(task: NewTask): Task {
@@ -156,10 +166,20 @@ export class SqliteTaskRepo implements TaskRepo {
     return row && fromRow(row);
   }
 
-  setGitIssue(id: number, issue: GitIssue | null, detail: string | null): Task {
-    if (this._setGitIssue.run({ id, issue, detail: issue === null ? null : detail, now: this._clock() }).changes === 0) {
-      throw new NotFoundError('task', id);
-    }
+  setGitIssue(id: number, issue: TaskGitIssue | null): Task {
+    const params = {
+      id,
+      issue: issue?.kind ?? null,
+      detail: issue?.detail ?? null,
+      pending: issue?.pendingPush ?? null,
+      now: this._clock(),
+    };
+    if (this._setGitIssue.run(params).changes === 0) throw new NotFoundError('task', id);
+    return this._require(id);
+  }
+
+  setCommitSha(id: number, sha: string): Task {
+    if (this._setCommitSha.run({ id, sha, now: this._clock() }).changes === 0) throw new NotFoundError('task', id);
     return this._require(id);
   }
 

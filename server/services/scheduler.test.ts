@@ -190,6 +190,16 @@ describe('Scheduler', () => {
     expect(scheduler.stop(task.id)).toBe(false);
   });
 
+  it('stopAndWait resolves only after the stopped run moved the task to review', async () => {
+    agent.script = waitForAbort;
+    const task = todo();
+    void scheduler.kick(project.id);
+    await settle();
+    await scheduler.stopAndWait(task.id);
+    expect(statusOf(task.id)).toBe('in_review');
+    expect(runs.listByTask(task.id)[0]?.outcome).toBe('stopped');
+  });
+
   it('does nothing when the project has no Todo task', async () => {
     tasks.create(newTask(project.id));
     await scheduler.kick(project.id);

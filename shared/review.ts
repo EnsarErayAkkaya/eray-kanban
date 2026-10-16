@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ACCEPT_FOLLOWUPS } from './project';
 
 const Lines = z.array(z.string().trim().min(1).max(2_000)).max(30);
 
@@ -19,3 +20,13 @@ export const ReviewJsonSchema = z.discriminatedUnion('outcome', [
 export type ReviewJson = z.output<typeof ReviewJsonSchema>;
 
 export const RejectTaskInput = z.object({ feedback: z.string().trim().min(1).max(10_000) }).strict();
+
+// Anything left out comes from the project's accept defaults.
+export const AcceptTaskInput = z
+  .object({
+    commit: z.boolean().optional(),
+    followup: z.enum(ACCEPT_FOLLOWUPS).optional(),
+    pushAfterMerge: z.boolean().optional(),
+  })
+  .strict();
+export type AcceptOptions = z.output<typeof AcceptTaskInput>;

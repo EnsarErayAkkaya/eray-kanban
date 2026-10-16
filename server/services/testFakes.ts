@@ -27,6 +27,13 @@ export class FakeScheduler implements WorkScheduler {
     this.stopped.push(taskId);
     return this.running;
   }
+  /** Lets a test play the worker finishing after a stop, as the real scheduler would. */
+  onStop: (taskId: number) => void = () => undefined;
+  stopAndWait(taskId: number): Promise<void> {
+    this.stopped.push(taskId);
+    this.onStop(taskId);
+    return Promise.resolve();
+  }
   resumeWithFeedback(taskId: number, feedback: string): Promise<void> {
     this.resumed.push([taskId, feedback]);
     return Promise.resolve();
@@ -38,15 +45,24 @@ export class FakeScheduler implements WorkScheduler {
 
 export const SNAPSHOT: RepoSnapshot = { branch: 'develop', head: 'abc123', untracked: [], emptyDirs: [] };
 
-// Answers the scheduler's git questions; set the fields to steer a test.
+// Answers git questions from the services; set the fields to steer a test, read calls to check what was asked.
 export class FakeGit implements GitPort {
   snapshotResult: SnapshotResult = { ok: true, snapshot: SNAPSHOT };
   snapshotError: Error | null = null;
   guardProblems: string[] = [];
+  branches = new Set(['develop', 'main']);
+  rollbackResult: RollbackResult = { problems: [] };
+  commitResult: CommitResult = { ok: true, sha: 'c0ffee', files: ['src/app.ts'] };
+  pushResult: PushResult = { ok: true };
+  mergeResult: MergeResult = { ok: true, sha: 'def456', pushed: false, pushError: null };
   readonly snapshotCalls: Array<[string, string]> = [];
+  readonly calls: string[] = [];
 
   inspect(): Promise<RepoStatus> {
     return Promise.resolve({ branch: 'develop', head: 'abc123', changed: [], untracked: [] });
+  }
+  branchExists(_repo: string, branch: string): Promise<boolean> {
+    return Promise.resolve(this.branches.has(branch));
   }
   snapshot(repo: string, workingBranch: string): Promise<SnapshotResult> {
     this.snapshotCalls.push([repo, workingBranch]);
@@ -62,15 +78,19 @@ export class FakeGit implements GitPort {
     return Promise.resolve({ problems: this.guardProblems });
   }
   rollback(): Promise<RollbackResult> {
-    return Promise.resolve({ problems: [] });
+    this.calls.push('rollback');
+    return Promise.resolve(this.rollbackResult);
   }
-  commitTouched(): Promise<CommitResult> {
-    return Promise.resolve({ ok: true, sha: null, files: [] });
+  commitTouched(_repo: string, _snapshot: RepoSnapshot, message: string): Promise<CommitResult> {
+    this.calls.push(`commit ${message}`);
+    return Promise.resolve(this.commitResult);
   }
-  push(): Promise<PushResult> {
-    return Promise.resolve({ ok: true });
+  push(_repo: string, branch: string): Promise<PushResult> {
+    this.calls.push(`push ${branch}`);
+    return Promise.resolve(this.pushResult);
   }
-  mergeInto(): Promise<MergeResult> {
-    return Promise.resolve({ ok: true, sha: 'def456', pushed: false, pushError: null });
+  mergeInto(_repo: string, source: string, target: string, opts: { readonly push: boolean }): Promise<MergeResult> {
+    this.calls.push(`merge ${source} into ${target}${opts.push ? ' and push' : ''}`);
+    return Promise.resolve(this.mergeResult);
   }
 }

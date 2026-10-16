@@ -28,6 +28,7 @@ export const TaskSchema = z.object({
   position: z.number(),
   gitIssue: z.enum(GIT_ISSUES).nullable(),
   gitIssueDetail: z.string().nullable(),
+  pendingPush: z.string().nullable(),
   commitSha: z.string().nullable(),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,

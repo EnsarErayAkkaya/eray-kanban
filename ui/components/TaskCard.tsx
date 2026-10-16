@@ -1,30 +1,61 @@
 import { useEffect, useState } from 'react';
 import type { Run, RunLogLine } from '@shared/run';
 import type { Task } from '@shared/task';
-import type { TaskEvent, TaskStatus } from '@shared/taskStatus';
+import type { TaskStatus } from '@shared/taskStatus';
 import { LogView } from './LogView';
+
+export type CardActionId =
+  | 'promote'
+  | 'demote'
+  | 'stop'
+  | 'cancel'
+  | 'rollback'
+  | 'accept'
+  | 'acceptNoCommit'
+  | 'reject'
+  | 'retryPush'
+  | 'resolveIssue';
 
 interface CardAction {
   readonly label: string;
-  readonly event: TaskEvent | 'stop';
-  readonly tone?: 'danger';
+  readonly id: CardActionId;
+  readonly tone?: 'danger' | 'primary';
 }
+
+const ROLLBACK: CardAction = { label: 'Cancel & roll back', id: 'rollback', tone: 'danger' };
 
 const ACTIONS: Readonly<Record<TaskStatus, readonly CardAction[]>> = {
   backlog: [
-    { label: 'To Todo', event: 'promote' },
-    { label: 'Cancel', event: 'cancel', tone: 'danger' },
+    { label: 'To Todo', id: 'promote' },
+    { label: 'Cancel', id: 'cancel', tone: 'danger' },
   ],
   todo: [
-    { label: 'To Backlog', event: 'demote' },
-    { label: 'Cancel', event: 'cancel', tone: 'danger' },
+    { label: 'To Backlog', id: 'demote' },
+    { label: 'Cancel', id: 'cancel', tone: 'danger' },
   ],
-  in_progress: [{ label: 'Stop', event: 'stop', tone: 'danger' }],
-  needs_input: [],
-  in_review: [{ label: 'Accept (no commit)', event: 'accept' }],
+  in_progress: [{ label: 'Stop', id: 'stop' }, ROLLBACK],
+  needs_input: [ROLLBACK],
+  in_review: [
+    { label: 'Accept', id: 'accept', tone: 'primary' },
+    { label: 'Accept, no commit', id: 'acceptNoCommit' },
+    { label: 'Reject…', id: 'reject' },
+    ROLLBACK,
+  ],
   done: [],
   cancelled: [],
 };
+
+const ISSUE_LABEL: Readonly<Record<NonNullable<Task['gitIssue']>, string>> = {
+  guard_tripped: 'Agent touched git',
+  merge_conflict: 'Merge conflict',
+  push_failed: 'Push failed',
+};
+
+function issueActions(task: Task): CardAction[] {
+  if (task.status !== 'done' || task.gitIssue === null) return [];
+  const retry: CardAction[] = task.gitIssue === 'push_failed' ? [{ label: 'Retry push', id: 'retryPush' }] : [];
+  return [...retry, { label: 'Mark resolved', id: 'resolveIssue' }];
+}
 
 const OUTCOME_LABEL: Readonly<Record<Run['outcome'], string>> = {
   running: 'running',
@@ -43,7 +74,7 @@ interface Props {
   readonly draggable: boolean;
   readonly onDragStart: (task: Task) => void;
   readonly onDragEnd: () => void;
-  readonly onAction: (task: Task, event: TaskEvent | 'stop') => void;
+  readonly onAction: (task: Task, action: CardActionId) => void;
   readonly onOpenLog: (task: Task) => void;
 }
 
@@ -94,9 +125,16 @@ export function TaskCard({ task, projectName, runs, log, draggable, onDragStart,
           {lastRun.error && <div className="card__error">{lastRun.error}</div>}
         </div>
       )}
+      {task.gitIssue && (
+        <div className={`card__issue card__issue--${task.gitIssue}`}>
+          <strong>{ISSUE_LABEL[task.gitIssue]}</strong>
+          {task.gitIssueDetail && <div>{task.gitIssueDetail}</div>}
+        </div>
+      )}
+      {task.commitSha && <div className="card__meta">Commit {task.commitSha.slice(0, 8)}</div>}
       <footer className="card__actions">
-        {ACTIONS[task.status].map((a) => (
-          <button key={a.event} className={a.tone === 'danger' ? 'btn btn--small btn--danger' : 'btn btn--small'} onClick={() => onAction(task, a.event)}>
+        {[...ACTIONS[task.status], ...issueActions(task)].map((a) => (
+          <button key={a.id} className={`btn btn--small${a.tone ? ` btn--${a.tone}` : ''}`} onClick={() => onAction(task, a.id)}>
             {a.label}
           </button>
         ))}

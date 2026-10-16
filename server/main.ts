@@ -43,14 +43,16 @@ async function main(): Promise<void> {
     info: (msg) => logRef.current?.info(msg),
     error: (msg, err) => logRef.current?.error(msg, err),
   };
+  const snapshotRepo = new SqliteSnapshotRepo(db, clock);
+  const git = new GitService(supervisor);
   const scheduler = new Scheduler(
     {
       projects: projectRepo,
       tasks: taskRepo,
       runs: runRepo,
-      snapshots: new SqliteSnapshotRepo(db, clock),
+      snapshots: snapshotRepo,
       agent: new ClaudeCliAgent(supervisor),
-      git: new GitService(supervisor),
+      git,
       events: hub,
       log,
     },
@@ -66,7 +68,15 @@ async function main(): Promise<void> {
     {
       projects: new ProjectService(projectRepo, taskRepo, new FsRepoProbe(), scheduler),
       tasks: new TaskService(projectRepo, taskRepo, runRepo, scheduler, hub),
-      review: new ReviewService(taskRepo, runRepo, scheduler, hub),
+      review: new ReviewService({
+        projects: projectRepo,
+        tasks: taskRepo,
+        runs: runRepo,
+        snapshots: snapshotRepo,
+        git,
+        scheduler,
+        events: hub,
+      }),
       subscribe: (listener) => hub.subscribe(listener),
       heartbeatMs: 25_000,
     },

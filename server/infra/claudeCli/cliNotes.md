@@ -32,6 +32,9 @@ Blocked: `git add x`, `git commit -m`, `cd . && git commit`, and writes to `.git
 - Never allow bare `Bash`. Allow-list specific commands such as the project's scripts and `rg`.
 - The post-run guard (HEAD and index vs. snapshot) is still required, because project scripts can run git too.
 
+## .env deny rules (tested 2026-10-16)
+`--disallowedTools 'Read(**/.env*)' 'Edit(**/.env*)' 'Write(**/.env*)'` denies reading, editing and creating `.env`, `.env.local` and `config/.env.production`. Grep for their contents returns no matches and Glob doesn't list them. `env.example.md` stays readable.
+
 ## Stream events (fixtures in `./fixtures`)
 - Order: `system/init` (session_id, model, tools) → `assistant` / `user` (tool_use and tool_result, `is_error` on denial) → `result`.
 - `result`: `subtype` ("success" | error subtypes), `is_error`, `num_turns`, `session_id`, `total_cost_usd`, `usage` (input / output / cache_creation / cache_read tokens), `permission_denials`, `result` (final text), `terminal_reason`.

@@ -9,7 +9,8 @@ import { fakeClock, memoryDb } from '../infra/sqlite/testDb';
 import { ProjectService } from '../services/projectService';
 import { ReviewService } from '../services/reviewService';
 import { TaskService } from '../services/taskService';
-import { FakeScheduler } from '../services/testFakes';
+import { FakeGit, FakeScheduler } from '../services/testFakes';
+import { SqliteSnapshotRepo } from '../infra/sqlite/sqliteSnapshotRepo';
 import { buildServer } from './buildServer';
 
 const API_PORT = 4317;
@@ -41,7 +42,15 @@ describe('HTTP API', () => {
       {
         projects: new ProjectService(projects, tasks, { isGitRepo: (p) => p.startsWith('/repos/') }, scheduler),
         tasks: new TaskService(projects, tasks, runs, scheduler, hub),
-        review: new ReviewService(tasks, runs, scheduler, hub),
+        review: new ReviewService({
+          projects,
+          tasks,
+          runs,
+          snapshots: new SqliteSnapshotRepo(db, clock),
+          git: new FakeGit(),
+          scheduler,
+          events: hub,
+        }),
         subscribe: (l) => hub.subscribe(l),
         heartbeatMs: 60_000,
       },

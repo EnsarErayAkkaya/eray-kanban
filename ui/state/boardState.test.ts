@@ -19,6 +19,7 @@ const task = (id: number, status: Task['status'] = 'backlog'): Task => ({
   dependsOn: null,
   gitIssue: null,
   gitIssueDetail: null,
+  pendingPush: null,
   commitSha: null,
   createdAt: '2026-10-16T09:00:00.000Z',
   updatedAt: '2026-10-16T09:00:00.000Z',
