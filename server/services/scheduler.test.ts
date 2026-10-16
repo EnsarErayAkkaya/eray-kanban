@@ -5,13 +5,14 @@ import type { Project } from '@shared/project';
 import type { Task } from '@shared/task';
 import { transition } from '../domain/taskMachine';
 import { SqliteProjectRepo } from '../infra/sqlite/sqliteProjectRepo';
+import { SqliteCheckRepo } from '../infra/sqlite/sqliteCheckRepo';
 import { SqliteRunRepo } from '../infra/sqlite/sqliteRunRepo';
 import { SqliteSnapshotRepo } from '../infra/sqlite/sqliteSnapshotRepo';
 import { SqliteTaskRepo } from '../infra/sqlite/sqliteTaskRepo';
 import { fakeClock, memoryDb, newTask, seedProject } from '../infra/sqlite/testDb';
 import type { AgentEvent, AgentExit, AgentPort, AgentRequest, AgentResult, Logger } from './ports';
 import { Scheduler } from './scheduler';
-import { FakeGit, SNAPSHOT } from './testFakes';
+import { FakeAdapter, FakeGit, SNAPSHOT, failedCheck, passedCheck } from './testFakes';
 
 // Repos run on in-memory SQLite; the agent, git, board events and logger are fakes.
 type Script = (onEvent: (e: AgentEvent) => void, signal: AbortSignal) => Promise<AgentExit>;
@@ -67,6 +68,9 @@ describe('Scheduler', () => {
   let sessions: number;
   let git: FakeGit;
   let snapshots: SqliteSnapshotRepo;
+  let checks: SqliteCheckRepo;
+  let adapter: FakeAdapter;
+  let projectRepo: SqliteProjectRepo;
   let scheduler: Scheduler;
 
   const todo = (overrides: Parameters<typeof newTask>[1] = {}, projectId = project.id): Task =>
@@ -88,12 +92,27 @@ describe('Scheduler', () => {
     sessions = 0;
     git = new FakeGit();
     snapshots = new SqliteSnapshotRepo(db, clock);
+    checks = new SqliteCheckRepo(db);
+    adapter = new FakeAdapter();
+    projectRepo = projects;
     const log: Logger = { info: () => undefined, error: (msg) => errors.push(msg) };
     scheduler = new Scheduler(
-      { projects, tasks, runs, snapshots, agent, git, events: { publish: (e) => events.push(e) }, log },
+      {
+        projects,
+        tasks,
+        runs,
+        snapshots,
+        checks,
+        agent,
+        git,
+        adapters: { web: adapter, generic: adapter },
+        events: { publish: (e) => events.push(e) },
+        log,
+      },
       {
         taskTemplate: '# Task #{{id}}: {{title}}',
         feedbackTemplate: 'Feedback on #{{id}}: {{feedback}}',
+        checkFixTemplate: 'Fix #{{id}}:\n{{failures}}',
         runTimeoutMs: 60_000,
         newSessionId: () => `new-session-${++sessions}`,
       },
@@ -414,6 +433,128 @@ describe('Scheduler', () => {
       await Promise.all([kick, resume]);
       expect(agent.calls).toHaveLength(2);
       expect(agent.calls.at(-1)?.resume).toBe(true);
+    });
+  });
+
+  describe('checks and the fix pass', () => {
+    const withChecks = (autoFix = true) =>
+      projectRepo.update(project.id, { checkCommands: ['npm run typecheck', 'npm run lint'], autoFix });
+    const kinds = (taskId: number) => runs.listByTask(taskId).map((r) => r.kind);
+
+    it('skips checks when the project has none', async () => {
+      const task = todo();
+      await scheduler.kick(project.id);
+      expect(adapter.calls).toBe(0);
+      expect(runs.listByTask(task.id)[0]).toMatchObject({ checksPassed: null, checksFailed: null });
+    });
+
+    it('runs the checks after the run and goes to review when they pass', async () => {
+      withChecks();
+      const task = todo();
+      await scheduler.kick(project.id);
+
+      expect(adapter.calls).toBe(1);
+      expect(runs.listByTask(task.id)[0]).toMatchObject({ checksPassed: 2, checksFailed: 0 });
+      expect(checks.listByTask(task.id)[0]?.results.map((r) => r.command)).toEqual(['npm run typecheck', 'npm run lint']);
+      expect(logTexts(task.id)).toContain('system: Checks: 2 passed, 0 failed');
+      expect(statusOf(task.id)).toBe('in_review');
+    });
+
+    it('resumes once with the failing output, then rechecks', async () => {
+      withChecks();
+      adapter.queue.push([passedCheck('npm run typecheck'), failedCheck('npm run lint', 'src/a.ts: no-unused-vars')]);
+      const task = todo();
+      await scheduler.kick(project.id);
+
+      expect(kinds(task.id)).toEqual(['initial', 'check_fix']);
+      const fix = agent.calls[1];
+      expect(fix).toMatchObject({ resume: true, sessionId: 'sess-1' });
+      expect(fix?.prompt).toContain('### `npm run lint` (exit 1)');
+      expect(fix?.prompt).toContain('src/a.ts: no-unused-vars');
+      expect(fix?.prompt).not.toContain('npm run typecheck');
+      expect(adapter.calls).toBe(2);
+      expect(runs.listByTask(task.id).map((r) => r.checksFailed)).toEqual([1, 0]);
+      expect(statusOf(task.id)).toBe('in_review');
+    });
+
+    it('goes to review red when the fix pass does not fix it, with no third run', async () => {
+      withChecks();
+      adapter.queue.push([failedCheck('npm run lint')], [failedCheck('npm run lint')]);
+      const task = todo();
+      await scheduler.kick(project.id);
+      expect(kinds(task.id)).toEqual(['initial', 'check_fix']);
+      expect(runs.listByTask(task.id).at(-1)?.checksFailed).toBe(1);
+      expect(statusOf(task.id)).toBe('in_review');
+    });
+
+    it('does not retry when auto-fix is off', async () => {
+      withChecks(false);
+      adapter.queue.push([failedCheck('npm run lint')]);
+      const task = todo();
+      await scheduler.kick(project.id);
+      expect(kinds(task.id)).toEqual(['initial']);
+      expect(statusOf(task.id)).toBe('in_review');
+    });
+
+    it('allows one fix pass again after a reject (once per review round)', async () => {
+      withChecks();
+      adapter.queue.push([failedCheck('npm run lint')], [failedCheck('npm run lint')]);
+      const task = todo();
+      await scheduler.kick(project.id);
+      tasks.applyStatusChange(transition(tasks.get(task.id) ?? task, 'reject'));
+
+      adapter.queue.push([failedCheck('npm run lint')]);
+      await scheduler.resumeWithFeedback(task.id, 'please fix lint');
+      expect(kinds(task.id)).toEqual(['initial', 'check_fix', 'feedback', 'check_fix']);
+    });
+
+    it('skips checks when the agent asked a question, and after a stopped run', async () => {
+      withChecks();
+      agent.script = finishWith({ kind: 'result', result: result(fence({ outcome: 'needs_input', question: 'Which?' })) });
+      await scheduler.kick(project.id);
+      expect(adapter.calls).toBe(0);
+
+      const other = seedProject(db, fakeClock(), 'api');
+      projectRepo.update(other.id, { checkCommands: ['npm test'] });
+      agent.script = waitForAbort;
+      const task = todo({}, other.id);
+      const worker = scheduler.kick(other.id);
+      await settle();
+      scheduler.stop(task.id);
+      await worker;
+      expect(adapter.calls).toBe(0);
+    });
+
+    it('runs checks after a run that hit its turn limit, but does not try to fix', async () => {
+      withChecks();
+      agent.script = finishWith({ kind: 'result', result: result('', 'error_max_turns') });
+      adapter.queue.push([failedCheck('npm run lint')]);
+      const task = todo();
+      await scheduler.kick(project.id);
+      expect(adapter.calls).toBe(1);
+      expect(kinds(task.id)).toEqual(['initial']);
+    });
+
+    it('stop() during the checks aborts them and skips the fix pass', async () => {
+      withChecks();
+      const task = todo();
+      adapter.queue.push([failedCheck('npm run lint')]);
+      adapter.onCheck = () => scheduler.stop(task.id);
+      await scheduler.kick(project.id);
+      expect(adapter.signals[0]?.aborted).toBe(true);
+      expect(kinds(task.id)).toEqual(['initial']);
+      expect(statusOf(task.id)).toBe('in_review');
+    });
+
+    it('records an adapter that throws as one failed check', async () => {
+      withChecks(false);
+      adapter.check = () => Promise.reject(new Error('npm not found'));
+      const task = todo();
+      await scheduler.kick(project.id);
+      expect(checks.listByTask(task.id)[0]?.results).toEqual([
+        { command: 'checks', exitCode: null, passed: false, timedOut: false, durationMs: 0, output: 'npm not found' },
+      ]);
+      expect(statusOf(task.id)).toBe('in_review');
     });
   });
 });

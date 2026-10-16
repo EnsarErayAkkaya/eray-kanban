@@ -1,3 +1,4 @@
+import type { CheckResult } from '@shared/check';
 import type { Task } from '@shared/task';
 
 // {{#key}}...{{/key}} keeps its block only when key is non-empty; {{key}} is replaced in one pass,
@@ -24,4 +25,23 @@ export function renderTaskPrompt(template: string, task: Task): string {
 
 export function renderFeedbackPrompt(template: string, task: Task, feedback: string): string {
   return renderPrompt(template, { ...taskValues(task), feedback: feedback.trim() });
+}
+
+const FAILURE_OUTPUT_LIMIT = 4_000;
+
+function describeExit(check: CheckResult): string {
+  if (check.timedOut) return 'timed out';
+  return check.exitCode === null ? 'did not finish' : `exit ${check.exitCode}`;
+}
+
+// Only the end of each failing check's output: enough to find the error, without filling the context.
+export function renderCheckFixPrompt(template: string, task: Task, failed: readonly CheckResult[]): string {
+  const failures = failed
+    .map((c) => {
+      const output = c.output.length > FAILURE_OUTPUT_LIMIT ? `…${c.output.slice(-FAILURE_OUTPUT_LIMIT)}` : c.output;
+      // Four backticks, so a ``` inside the output cannot end the block early.
+      return `### \`${c.command}\` (${describeExit(c)})\n\`\`\`\`\n${output}\n\`\`\`\``;
+    })
+    .join('\n\n');
+  return renderPrompt(template, { ...taskValues(task), failures });
 }

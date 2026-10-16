@@ -31,6 +31,22 @@ describe('SqliteProjectRepo', () => {
     expect(repo.get(created.id)).toEqual(created);
   });
 
+  it('saves the adapter settings on create and on update', () => {
+    const created = repo.create({ ...input('web'), checkCommands: ['npm test'], devUrl: 'http://localhost:3000' });
+    expect(created).toMatchObject({ checkCommands: ['npm test'], autoFix: true, devUrl: 'http://localhost:3000' });
+    const updated = repo.update(created.id, {
+      autoFix: false,
+      devCommand: 'npm run dev',
+      screenshotSizes: ['desktop', 'mobile'],
+    });
+    expect(updated).toMatchObject({
+      checkCommands: ['npm test'],
+      autoFix: false,
+      devCommand: 'npm run dev',
+      screenshotSizes: ['desktop', 'mobile'],
+    });
+  });
+
   it('lists projects by name', () => {
     repo.create(input('zeta'));
     repo.create(input('Alpha'));

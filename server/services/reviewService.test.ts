@@ -5,12 +5,13 @@ import type { Task } from '@shared/task';
 import { ConflictError, NotFoundError, ValidationError } from '../domain/errors';
 import { IllegalTransitionError, type TaskEvent, transition } from '../domain/taskMachine';
 import { SqliteProjectRepo } from '../infra/sqlite/sqliteProjectRepo';
+import { SqliteCheckRepo } from '../infra/sqlite/sqliteCheckRepo';
 import { SqliteRunRepo } from '../infra/sqlite/sqliteRunRepo';
 import { SqliteSnapshotRepo } from '../infra/sqlite/sqliteSnapshotRepo';
 import { SqliteTaskRepo } from '../infra/sqlite/sqliteTaskRepo';
 import { fakeClock, memoryDb, newTask, seedProject } from '../infra/sqlite/testDb';
 import { ReviewService } from './reviewService';
-import { FakeGit, FakeScheduler, SNAPSHOT } from './testFakes';
+import { FakeGit, FakeScheduler, SNAPSHOT, passedCheck } from './testFakes';
 
 // Repos run on in-memory SQLite; git and the scheduler are fakes that record what was asked of them.
 describe('ReviewService', () => {
@@ -18,6 +19,7 @@ describe('ReviewService', () => {
   let tasks: SqliteTaskRepo;
   let runs: SqliteRunRepo;
   let snapshots: SqliteSnapshotRepo;
+  let checks: SqliteCheckRepo;
   let git: FakeGit;
   let scheduler: FakeScheduler;
   let events: BoardEvent[];
@@ -47,7 +49,17 @@ describe('ReviewService', () => {
     git = new FakeGit();
     scheduler = new FakeScheduler();
     events = [];
-    service = new ReviewService({ projects, tasks, runs, snapshots, git, scheduler, events: { publish: (e) => events.push(e) } });
+    checks = new SqliteCheckRepo(db);
+    service = new ReviewService({
+      projects,
+      tasks,
+      runs,
+      checks,
+      snapshots,
+      git,
+      scheduler,
+      events: { publish: (e) => events.push(e) },
+    });
   });
 
   describe('changes', () => {
@@ -73,6 +85,14 @@ describe('ReviewService', () => {
       const task = move(tasks.create(newTask(project.id)), 'promote', 'start', 'submit');
       expect((await service.changes(task.id)).reason).toBe('This task has no snapshot to compare against');
     });
+  });
+
+  it('lists check results per run', () => {
+    const task = inReview();
+    const runId = runs.listByTask(task.id)[0]?.id ?? 0;
+    checks.save(runId, [passedCheck('npm run lint')]);
+    expect(service.checks(task.id)).toEqual([{ runId, results: [passedCheck('npm run lint')] }]);
+    expect(() => service.checks(999)).toThrow(NotFoundError);
   });
 
   describe('reject', () => {

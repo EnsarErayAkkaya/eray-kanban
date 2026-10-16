@@ -4,7 +4,9 @@ import type { AcceptOptions } from '@shared/review';
 import type { Run, RunLogLine } from '@shared/run';
 import type { Task } from '@shared/task';
 import type { ActionResult, ReviewAction } from '../state/useBoard';
-import { useReviewChanges } from '../state/useReviewChanges';
+import { api } from '../state/apiClient';
+import { useVersionedLoad } from '../state/useVersionedLoad';
+import { ChecksView } from './ChecksView';
 import { ConfirmButton } from './ConfirmButton';
 import { DiffView } from './DiffView';
 import { LogView } from './LogView';
@@ -12,7 +14,7 @@ import { LogView } from './LogView';
 const KIND_LABEL: Readonly<Record<Run['kind'], string>> = {
   initial: 'First run',
   feedback: 'After your feedback',
-  check_fix: 'Check fix',
+  check_fix: 'Fix pass for checks',
   answer: 'After your answer',
 };
 
@@ -39,7 +41,10 @@ interface Props {
 export function ReviewPanel({ task, project, runs, log, onReview, onStop, onClose }: Props) {
   const lastRun = runs.at(-1);
   const version = `${task.status}:${task.updatedAt}:${runs.length}:${lastRun?.outcome ?? ''}`;
-  const { changes, loading, error: changesError } = useReviewChanges(task.id, version);
+  const { data: changes, loading, error: changesError } = useVersionedLoad(() => api.changes(task.id), version);
+  const { data: checks } = useVersionedLoad(() => api.checks(task.id), version);
+  const latestChecks = checks?.at(-1);
+  const checkedRun = runs.find((r) => r.id === latestChecks?.runId);
   const review = [...runs].reverse().find((r) => r.review !== null)?.review ?? null;
 
   const [busy, setBusy] = useState(false);
@@ -125,6 +130,16 @@ export function ReviewPanel({ task, project, runs, log, onReview, onStop, onClos
             </>
           )}
         </section>
+
+        {latestChecks && (
+          <section className="drawer__section">
+            <h3>
+              Checks
+              {checkedRun?.kind === 'check_fix' && <span className="hint"> · after the automatic fix pass</span>}
+            </h3>
+            <ChecksView results={latestChecks.results} />
+          </section>
+        )}
 
         <section className="drawer__section">
           <h3>

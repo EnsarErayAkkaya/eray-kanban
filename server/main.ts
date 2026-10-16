@@ -2,6 +2,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { GenericAdapter } from './adapters/generic/genericAdapter';
+import { CommandRunner } from './adapters/shared/commandRunner';
+import { WebAdapter } from './adapters/web/webAdapter';
 import { buildServer } from './api/buildServer';
 import { ClaudeCliAgent } from './infra/claudeCli/claudeCliAgent';
 import { EventHub } from './infra/events/eventHub';
@@ -9,11 +12,12 @@ import { FsRepoProbe } from './infra/fs/repoProbe';
 import { GitService } from './infra/git/gitService';
 import { ProcessSupervisor } from './infra/process/processSupervisor';
 import { MIGRATIONS_DIR, openDatabase } from './infra/sqlite/database';
+import { SqliteCheckRepo } from './infra/sqlite/sqliteCheckRepo';
 import { SqliteProjectRepo } from './infra/sqlite/sqliteProjectRepo';
 import { SqliteRunRepo } from './infra/sqlite/sqliteRunRepo';
 import { SqliteSnapshotRepo } from './infra/sqlite/sqliteSnapshotRepo';
 import { SqliteTaskRepo } from './infra/sqlite/sqliteTaskRepo';
-import type { Logger } from './services/ports';
+import type { AdapterRegistry, Logger } from './services/ports';
 import { ProjectService } from './services/projectService';
 import { ReviewService } from './services/reviewService';
 import { Scheduler } from './services/scheduler';
@@ -44,21 +48,27 @@ async function main(): Promise<void> {
     error: (msg, err) => logRef.current?.error(msg, err),
   };
   const snapshotRepo = new SqliteSnapshotRepo(db, clock);
+  const checkRepo = new SqliteCheckRepo(db);
   const git = new GitService(supervisor);
+  const commands = new CommandRunner(supervisor);
+  const adapters: AdapterRegistry = { web: new WebAdapter(commands), generic: new GenericAdapter(commands) };
   const scheduler = new Scheduler(
     {
       projects: projectRepo,
       tasks: taskRepo,
       runs: runRepo,
       snapshots: snapshotRepo,
+      checks: checkRepo,
       agent: new ClaudeCliAgent(supervisor),
       git,
+      adapters,
       events: hub,
       log,
     },
     {
       taskTemplate: fs.readFileSync(prompt('task.md'), 'utf8'),
       feedbackTemplate: fs.readFileSync(prompt('feedback.md'), 'utf8'),
+      checkFixTemplate: fs.readFileSync(prompt('checkFix.md'), 'utf8'),
       runTimeoutMs: RUN_TIMEOUT_MS,
       newSessionId: () => crypto.randomUUID(),
     },
@@ -72,6 +82,7 @@ async function main(): Promise<void> {
         projects: projectRepo,
         tasks: taskRepo,
         runs: runRepo,
+        checks: checkRepo,
         snapshots: snapshotRepo,
         git,
         scheduler,

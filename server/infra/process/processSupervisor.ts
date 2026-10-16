@@ -21,6 +21,16 @@ export interface CaptureRequest extends Omit<BaseRequest, 'signal' | 'onSpawn'> 
   readonly maxStdoutBytes: number;
 }
 
+export interface TailRequest extends Omit<BaseRequest, 'onSpawn'> {
+  readonly maxOutputBytes: number;
+}
+
+export interface TailExit extends ProcessExit {
+  /** The last maxOutputBytes of stdout and stderr, interleaved as they arrived. */
+  readonly output: string;
+  readonly outputTruncated: boolean;
+}
+
 export interface ProcessExit {
   readonly code: number | null;
   readonly signal: NodeJS.Signals | null;
@@ -70,7 +80,25 @@ export class ProcessSupervisor {
     return { ...exit, stdout: Buffer.concat(chunks), stdoutTruncated: truncated };
   }
 
-  private _spawn(req: BaseRequest, attachStdout: (stdout: Readable) => void): Promise<ProcessExit> {
+  /** For checks: failures are printed last, on either stream, so keep the end of both. */
+  async tail(req: TailRequest): Promise<TailExit> {
+    let output = '';
+    let truncated = false;
+    const keep = (chunk: Buffer) => {
+      output += chunk.toString('utf8');
+      if (output.length > req.maxOutputBytes) {
+        truncated = true;
+        output = output.slice(-req.maxOutputBytes);
+      }
+    };
+    const exit = await this._spawn({ ...req, onSpawn: () => undefined }, (stdout, stderr) => {
+      stdout.on('data', keep);
+      stderr.on('data', keep);
+    });
+    return { ...exit, output, outputTruncated: truncated };
+  }
+
+  private _spawn(req: BaseRequest, attachStdout: (stdout: Readable, stderr: Readable) => void): Promise<ProcessExit> {
     return new Promise((resolve) => {
       let timedOut = false;
       let cancelled = false;
@@ -112,7 +140,7 @@ export class ProcessSupervisor {
       if (req.signal.aborted) onAbort();
       else req.signal.addEventListener('abort', onAbort, { once: true });
 
-      attachStdout(stdout);
+      attachStdout(stdout, errStream);
       errStream.on('data', (chunk: Buffer) => {
         stderr = (stderr + chunk.toString()).slice(-STDERR_TAIL_BYTES);
       });

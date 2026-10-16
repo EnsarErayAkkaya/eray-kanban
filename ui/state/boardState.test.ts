@@ -53,6 +53,8 @@ const run = (id: number, outcome: Run['outcome'] = 'running'): Run => ({
   startedAt: '2026-10-16T09:00:00.000Z',
   endedAt: null,
   review: null,
+  checksPassed: null,
+  checksFailed: null,
 });
 
 describe('boardReducer', () => {

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Task } from '@shared/task';
-import { renderFeedbackPrompt, renderTaskPrompt } from './taskPrompt';
+import { renderCheckFixPrompt, renderFeedbackPrompt, renderTaskPrompt } from './taskPrompt';
 
 const template = fs.readFileSync(new URL('./prompts/task.md', import.meta.url), 'utf8');
 
@@ -52,6 +52,21 @@ describe('renderTaskPrompt', () => {
     const prompt = renderFeedbackPrompt(feedback, task, '  Use a toggle, not a checkbox.\n');
     expect(prompt).toMatch(/^Review feedback on task #42: Add settings page\n\nUse a toggle, not a checkbox.\n\n/);
     expect(prompt).not.toMatch(/\{\{/);
+  });
+
+  it('renders only the failing checks with the end of their output', () => {
+    const template = fs.readFileSync(new URL('./prompts/checkFix.md', import.meta.url), 'utf8');
+    const long = `${'x'.repeat(10_000)}\nsrc/a.ts(3,1): error TS2322`;
+    const prompt = renderCheckFixPrompt(template, task, [
+      { command: 'npm run typecheck', exitCode: 2, passed: false, timedOut: false, durationMs: 9, output: long },
+      { command: 'npm test', exitCode: null, passed: false, timedOut: true, durationMs: 9, output: '```still running' },
+    ]);
+    expect(prompt).toContain('### `npm run typecheck` (exit 2)');
+    expect(prompt).toContain('src/a.ts(3,1): error TS2322');
+    expect(prompt).toContain('### `npm test` (timed out)');
+    expect(prompt).toContain('````\n```still running\n````');
+    expect(prompt.length).toBeLessThan(9_000);
+    expect(prompt).toContain('without skipping, disabling or weakening any check');
   });
 
   it('stays short: no file contents, diffs or project rules', () => {

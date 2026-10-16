@@ -56,6 +56,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     return deps.review.reject(IdParams.parse(req.params).id, RejectTaskInput.parse(req.body).feedback);
   });
   app.get('/api/tasks/:id/changes', async (req) => deps.review.changes(IdParams.parse(req.params).id));
+  app.get('/api/tasks/:id/checks', async (req) => deps.review.checks(IdParams.parse(req.params).id));
   app.post('/api/tasks/:id/accept', async (req) => {
     return deps.review.accept(IdParams.parse(req.params).id, AcceptTaskInput.parse(req.body ?? {}));
   });

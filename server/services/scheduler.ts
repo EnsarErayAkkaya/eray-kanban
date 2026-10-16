@@ -1,14 +1,17 @@
+import type { CheckResult } from '@shared/check';
 import type { ProjectStatus } from '@shared/events';
 import type { Project } from '@shared/project';
-import type { RunKind } from '@shared/run';
+import type { RunKind, RunOutcome } from '@shared/run';
 import type { Task } from '@shared/task';
 import { StaleStatusError } from '../domain/errors';
 import { type TaskEvent, transition } from '../domain/taskMachine';
 import type {
+  AdapterRegistry,
   AgentEvent,
   AgentExit,
   AgentPort,
   BoardEventSink,
+  CheckRepo,
   GitPort,
   Logger,
   NewLogLine,
@@ -20,15 +23,17 @@ import type {
   WorkScheduler,
 } from './ports';
 import { extractReviewJson } from './reviewJson';
-import { renderFeedbackPrompt, renderTaskPrompt } from './taskPrompt';
+import { renderCheckFixPrompt, renderFeedbackPrompt, renderTaskPrompt } from './taskPrompt';
 
 export interface SchedulerDeps {
   readonly projects: ProjectRepo;
   readonly tasks: TaskRepo;
   readonly runs: RunRepo;
   readonly snapshots: SnapshotRepo;
+  readonly checks: CheckRepo;
   readonly agent: AgentPort;
   readonly git: GitPort;
+  readonly adapters: AdapterRegistry;
   readonly events: BoardEventSink;
   readonly log: Logger;
 }
@@ -36,6 +41,7 @@ export interface SchedulerDeps {
 export interface SchedulerOptions {
   readonly taskTemplate: string;
   readonly feedbackTemplate: string;
+  readonly checkFixTemplate: string;
   readonly runTimeoutMs: number;
   readonly newSessionId: () => string;
 }
@@ -44,6 +50,23 @@ interface Session {
   readonly id: string;
   readonly resume: boolean;
 }
+
+interface Step {
+  readonly kind: RunKind;
+  readonly input: string;
+  readonly session: Session;
+}
+
+interface RunSummary {
+  readonly runId: number;
+  readonly outcome: RunOutcome;
+  /** submit, or askInput when the agent asked a question. */
+  readonly event: TaskEvent;
+  readonly sessionId: string;
+}
+
+// A stopped, crashed or timed-out run goes to review as it is; checks would only add noise.
+const CHECKED_OUTCOMES: ReadonlySet<RunOutcome> = new Set(['completed', 'turn_limit']);
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -174,7 +197,7 @@ export class Scheduler implements WorkScheduler {
     }
     snapshots.save(task.id, result.snapshot);
     const prompt = renderTaskPrompt(this._options.taskTemplate, task);
-    await this._runAgent(project, task, 'initial', prompt, { id: this._options.newSessionId(), resume: false });
+    await this._pipeline(project, task, { kind: 'initial', input: prompt, session: { id: this._options.newSessionId(), resume: false } });
   }
 
   private async _resume(taskId: number, feedback: string): Promise<void> {
@@ -195,16 +218,44 @@ export class Scheduler implements WorkScheduler {
       return;
     }
     const prompt = renderFeedbackPrompt(this._options.feedbackTemplate, task, feedback);
-    await this._runAgent(project, task, 'feedback', prompt, { id: sessionId, resume: true });
+    await this._pipeline(project, task, { kind: 'feedback', input: prompt, session: { id: sessionId, resume: true } });
   }
 
-  private async _runAgent(project: Project, task: Task, kind: RunKind, input: string, session: Session): Promise<void> {
+  // run → guard → checks → at most one fix pass per round → review. One signal stops whichever step is running.
+  private async _pipeline(project: Project, task: Task, first: Step): Promise<void> {
+    const controller = new AbortController();
+    this._controllers.set(task.id, controller);
+    const { signal } = controller;
+    try {
+      let step = first;
+      for (;;) {
+        const run = await this._runAgent(project, task, step, signal);
+        await this._guard(project, task.id, run.runId);
+        if (run.event !== 'submit' || !CHECKED_OUTCOMES.has(run.outcome) || signal.aborted) {
+          return this._settle(task.id, run.event);
+        }
+        const failed = (await this._runChecks(project, task.id, run.runId, signal)).filter((r) => !r.passed);
+        const fixPass = failed.length > 0 && project.autoFix && step.kind !== 'check_fix' && run.outcome === 'completed';
+        if (!fixPass || signal.aborted) return this._settle(task.id, 'submit');
+
+        this._appendLog(task.id, run.runId, { kind: 'system', text: 'Checks failed; resuming once so the agent can fix them' });
+        step = {
+          kind: 'check_fix',
+          input: renderCheckFixPrompt(this._options.checkFixTemplate, task, failed),
+          session: { id: run.sessionId, resume: true },
+        };
+      }
+    } finally {
+      this._controllers.delete(task.id);
+    }
+  }
+
+  private async _runAgent(project: Project, task: Task, step: Step, signal: AbortSignal): Promise<RunSummary> {
     const { runs, agent, events } = this._deps;
+    const { kind, input, session } = step;
     const run = runs.start({ taskId: task.id, sessionId: session.id, kind, model: task.model, turnLimit: task.turnLimit, input });
     events.publish({ type: 'run', run });
 
-    const controller = new AbortController();
-    this._controllers.set(task.id, controller);
     let exit: AgentExit;
     try {
       exit = await agent.run(
@@ -219,14 +270,13 @@ export class Scheduler implements WorkScheduler {
           timeoutMs: this._options.runTimeoutMs,
         },
         (event) => this._onAgentEvent(task.id, run.id, event),
-        controller.signal,
+        signal,
       );
     } catch (err) {
       exit = { kind: 'crashed', error: errorText(err) };
-    } finally {
-      this._controllers.delete(task.id);
     }
-    await this._finishRun(project, task.id, run.id, exit);
+    const finished = this._finishRun(task.id, run.id, exit);
+    return { ...finished, sessionId: finished.sessionId ?? session.id };
   }
 
   private _onAgentEvent(taskId: number, runId: number, event: AgentEvent): void {
@@ -240,8 +290,9 @@ export class Scheduler implements WorkScheduler {
     }
   }
 
-  private async _finishRun(project: Project, taskId: number, runId: number, exit: AgentExit): Promise<void> {
-    const { runs, tasks, events } = this._deps;
+  /** Records how the run ended and decides where the task goes; it does not move the task. */
+  private _finishRun(taskId: number, runId: number, exit: AgentExit): Omit<RunSummary, 'sessionId'> & { sessionId: string | null } {
+    const { runs, events } = this._deps;
     const end = toRunEnd(exit);
     if (end.error) this._appendLog(taskId, runId, { kind: 'error', text: end.error });
 
@@ -257,11 +308,35 @@ export class Scheduler implements WorkScheduler {
         }
       }
     }
-    events.publish({ type: 'run', run: runs.finish(runId, end) });
+    const finished = runs.finish(runId, end);
+    events.publish({ type: 'run', run: finished });
+    return { runId, outcome: end.outcome, event, sessionId: finished.sessionId };
+  }
 
-    await this._guard(project, taskId, runId);
-    // A cancel may have moved the task while the agent ran; only an in-progress task moves on from here.
-    const current = tasks.get(taskId);
+  private async _runChecks(project: Project, taskId: number, runId: number, signal: AbortSignal): Promise<CheckResult[]> {
+    const { adapters, checks, runs, events } = this._deps;
+    if (project.checkCommands.length === 0) return [];
+    this._appendLog(taskId, runId, { kind: 'system', text: `Running ${project.checkCommands.length} checks` });
+
+    let results: CheckResult[];
+    try {
+      results = await adapters[project.type].check(project, signal);
+    } catch (err) {
+      results = [{ command: 'checks', exitCode: null, passed: false, timedOut: false, durationMs: 0, output: errorText(err) }];
+    }
+    checks.save(runId, results);
+    const run = runs.get(runId);
+    if (run) events.publish({ type: 'run', run });
+
+    const failed = results.filter((r) => !r.passed).map((r) => r.command);
+    const summary = `Checks: ${results.length - failed.length} passed, ${failed.length} failed${failed.length ? `: ${failed.join(', ')}` : ''}`;
+    this._appendLog(taskId, runId, { kind: failed.length ? 'error' : 'system', text: summary });
+    return results;
+  }
+
+  // A cancel may have moved the task meanwhile; only an in-progress task moves on from here.
+  private _settle(taskId: number, event: TaskEvent): void {
+    const current = this._deps.tasks.get(taskId);
     if (current?.status === 'in_progress') this._move(current, event);
   }
 

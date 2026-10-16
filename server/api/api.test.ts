@@ -10,6 +10,7 @@ import { ProjectService } from '../services/projectService';
 import { ReviewService } from '../services/reviewService';
 import { TaskService } from '../services/taskService';
 import { FakeGit, FakeScheduler } from '../services/testFakes';
+import { SqliteCheckRepo } from '../infra/sqlite/sqliteCheckRepo';
 import { SqliteSnapshotRepo } from '../infra/sqlite/sqliteSnapshotRepo';
 import { buildServer } from './buildServer';
 
@@ -46,6 +47,7 @@ describe('HTTP API', () => {
           projects,
           tasks,
           runs,
+          checks: new SqliteCheckRepo(db),
           snapshots: new SqliteSnapshotRepo(db, clock),
           git: new FakeGit(),
           scheduler,

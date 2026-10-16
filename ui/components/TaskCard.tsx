@@ -74,6 +74,7 @@ export function TaskCard({ task, projectName, runs, log, draggable, onDragStart,
     if (HAS_HISTORY.has(task.status)) onOpenLog(task);
   }, []);
   const lastRun = runs.at(-1);
+  const checkedRun = [...runs].reverse().find((r) => r.checksPassed !== null);
   const totalCost = runs.reduce((sum, r) => sum + (r.costUsd ?? 0), 0);
   const totalTurns = runs.reduce((sum, r) => sum + (r.numTurns ?? 0), 0);
 
@@ -115,6 +116,13 @@ export function TaskCard({ task, projectName, runs, log, draggable, onDragStart,
         <div className={`card__issue card__issue--${task.gitIssue}`}>
           <strong>{ISSUE_LABEL[task.gitIssue]}</strong>
           {task.gitIssueDetail && <div>{task.gitIssueDetail}</div>}
+        </div>
+      )}
+      {checkedRun && checkedRun.checksFailed !== null && checkedRun.checksPassed !== null && (
+        <div className={`card__checks card__checks--${checkedRun.checksFailed > 0 ? 'fail' : 'pass'}`}>
+          {checkedRun.checksFailed > 0
+            ? `✗ ${checkedRun.checksFailed} of ${checkedRun.checksFailed + checkedRun.checksPassed} checks failed`
+            : `✓ ${checkedRun.checksPassed} checks passed`}
         </div>
       )}
       {task.commitSha && <div className="card__meta">Commit {task.commitSha.slice(0, 8)}</div>}

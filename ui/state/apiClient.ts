@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RunChecksSchema } from '@shared/check';
 import { type BoardEvent, BoardEventSchema, ProjectStatusSchema } from '@shared/events';
 import { type CreateProjectInput, ProjectSchema, type UpdateProjectInput } from '@shared/project';
 import { type AcceptOptions, ReviewChangesSchema } from '@shared/review';
@@ -53,6 +54,7 @@ export const api = {
   createProject: (draft: ProjectDraft) => call(ProjectSchema, 'POST', '/projects', draft),
   updateProject: (projectId: number, patch: ProjectPatchDraft) => call(ProjectSchema, 'PATCH', `/projects/${projectId}`, patch),
   changes: (taskId: number) => call(ReviewChangesSchema, 'GET', `/tasks/${taskId}/changes`),
+  checks: (taskId: number) => call(z.array(RunChecksSchema), 'GET', `/tasks/${taskId}/checks`),
   tasks: () => call(z.array(TaskSchema), 'GET', '/tasks'),
   createTask: (draft: TaskDraft) => call(TaskSchema, 'POST', '/tasks', draft),
   sendEvent: (taskId: number, event: TaskEvent) => call(TaskSchema, 'POST', `/tasks/${taskId}/events`, { event }),

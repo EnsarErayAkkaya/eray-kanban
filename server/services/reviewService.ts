@@ -1,3 +1,4 @@
+import type { RunChecks } from '@shared/check';
 import type { Project } from '@shared/project';
 import type { AcceptOptions, ReviewChanges } from '@shared/review';
 import type { Task } from '@shared/task';
@@ -6,6 +7,7 @@ import { type TaskEvent, occupiesProject, transition } from '../domain/taskMachi
 import { commitMessage } from './commitMessage';
 import type {
   BoardEventSink,
+  CheckRepo,
   GitPort,
   ProjectRepo,
   RunRepo,
@@ -19,6 +21,7 @@ export interface ReviewDeps {
   readonly projects: ProjectRepo;
   readonly tasks: TaskRepo;
   readonly runs: RunRepo;
+  readonly checks: CheckRepo;
   readonly snapshots: SnapshotRepo;
   readonly git: GitPort;
   readonly scheduler: WorkScheduler;
@@ -44,6 +47,11 @@ export class ReviewService {
     const repo = this._projectOf(task).repoPath;
     const files = await this._deps.git.diff(repo, snapshot, await this._deps.git.touchedFiles(repo, snapshot));
     return { available: true, reason: null, baseHead: snapshot.head, files };
+  }
+
+  checks(taskId: number): RunChecks[] {
+    this._require(taskId);
+    return this._deps.checks.listByTask(taskId);
   }
 
   /** The same session resumes with the feedback, so the agent keeps its context. */

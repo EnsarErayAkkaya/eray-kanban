@@ -640,3 +640,57 @@ textarea {
   border-radius: 6px;
   margin: 4px 0 0;
 }
+
+.card__checks {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.card__checks--pass {
+  color: var(--ok);
+}
+
+.card__checks--fail {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.checks__item summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.checks__mark {
+  display: inline-block;
+  width: 18px;
+  font-weight: 700;
+}
+
+.checks__item--pass .checks__mark {
+  color: var(--ok);
+}
+
+.checks__item--fail .checks__mark {
+  color: var(--danger);
+}
+
+.checks__output {
+  max-height: 260px;
+  overflow: auto;
+  margin: 4px 0 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--log-bg);
+  color: var(--log-text);
+  font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+}

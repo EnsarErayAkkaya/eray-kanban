@@ -9,6 +9,8 @@ const StoredReview = ReviewJsonSchema.nullable();
 
 interface RunRow {
   review_json: string | null;
+  checks_passed: number | null;
+  checks_failed: number | null;
   id: number;
   task_id: number;
   kind: string;
@@ -69,6 +71,8 @@ function fromRow(r: RunRow): Run {
     costUsd: r.cost_usd,
     error: r.error,
     review: StoredReview.parse(r.review_json === null ? null : JSON.parse(r.review_json)),
+    checksPassed: r.checks_passed,
+    checksFailed: r.checks_failed,
     startedAt: r.started_at,
     endedAt: r.ended_at,
   });

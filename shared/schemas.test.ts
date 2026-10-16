@@ -36,6 +36,36 @@ describe('project schemas', () => {
     },
   );
 
+  it('defaults checks, auto-fix and screenshot sizes', () => {
+    expect(CreateProjectInput.parse(project)).toMatchObject({
+      checkCommands: [],
+      autoFix: true,
+      devCommand: null,
+      devUrl: null,
+      screenshotSizes: ['desktop'],
+    });
+  });
+
+  it.each(['https://example.com', 'file:///etc/passwd', 'http://192.168.1.5:3000', 'localhost:3000'])(
+    'rejects dev URL %j',
+    (devUrl) => {
+      expect(CreateProjectInput.safeParse({ ...project, devUrl }).success).toBe(false);
+    },
+  );
+
+  it('accepts local dev URLs, known sizes once each, and safe check commands', () => {
+    const ok = CreateProjectInput.safeParse({
+      ...project,
+      devUrl: 'http://127.0.0.1:5180',
+      screenshotSizes: ['desktop', 'mobile'],
+      checkCommands: ['npm run typecheck', 'npx vitest run'],
+    });
+    expect(ok.success).toBe(true);
+    expect(CreateProjectInput.safeParse({ ...project, screenshotSizes: ['desktop', 'desktop'] }).success).toBe(false);
+    expect(CreateProjectInput.safeParse({ ...project, screenshotSizes: ['watch'] }).success).toBe(false);
+    expect(CreateProjectInput.safeParse({ ...project, checkCommands: ['npm test && git push'] }).success).toBe(false);
+  });
+
   it('accepts project script commands', () => {
     expect(CreateProjectInput.safeParse({ ...project, allowedCommands: ['npm run test', 'npx vitest run'] }).success).toBe(
       true,

@@ -18,11 +18,38 @@ interface ProjectRow {
   default_model: string;
   default_turn_limit: number;
   allowed_commands: string;
+  check_commands: string;
+  auto_fix: number;
+  dev_command: string | null;
+  dev_url: string | null;
+  screenshot_sizes: string;
   created_at: string;
   updated_at: string;
 }
 
 type ProjectParams = Omit<ProjectRow, 'id' | 'created_at'>;
+
+// One list drives both statements, so a new setting cannot be saved on create but lost on update.
+const COLUMNS: readonly (keyof ProjectParams)[] = [
+  'name',
+  'repo_path',
+  'type',
+  'working_branch',
+  'merge_target',
+  'accept_commit',
+  'accept_followup',
+  'push_after_merge',
+  'commit_message_format',
+  'default_model',
+  'default_turn_limit',
+  'allowed_commands',
+  'check_commands',
+  'auto_fix',
+  'dev_command',
+  'dev_url',
+  'screenshot_sizes',
+  'updated_at',
+];
 
 function fromRow(r: ProjectRow): Project {
   return ProjectSchema.parse({
@@ -39,6 +66,11 @@ function fromRow(r: ProjectRow): Project {
     defaultModel: r.default_model,
     defaultTurnLimit: r.default_turn_limit,
     allowedCommands: JSON.parse(r.allowed_commands),
+    checkCommands: JSON.parse(r.check_commands),
+    autoFix: r.auto_fix === 1,
+    devCommand: r.dev_command,
+    devUrl: r.dev_url,
+    screenshotSizes: JSON.parse(r.screenshot_sizes),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   });
@@ -58,6 +90,11 @@ function toParams(p: NewProject, updatedAt: string): ProjectParams {
     default_model: p.defaultModel,
     default_turn_limit: p.defaultTurnLimit,
     allowed_commands: JSON.stringify(p.allowedCommands),
+    check_commands: JSON.stringify(p.checkCommands),
+    auto_fix: toFlag(p.autoFix),
+    dev_command: p.devCommand,
+    dev_url: p.devUrl,
+    screenshot_sizes: JSON.stringify(p.screenshotSizes),
     updated_at: updatedAt,
   };
 }
@@ -72,20 +109,12 @@ export class SqliteProjectRepo implements ProjectRepo {
     db: Database,
     private readonly _clock: Clock,
   ) {
+    const insertCols = [...COLUMNS, 'created_at'];
     this._insert = db.prepare(`
-      INSERT INTO projects (name, repo_path, type, working_branch, merge_target, accept_commit, accept_followup,
-        push_after_merge, commit_message_format, default_model, default_turn_limit, allowed_commands, created_at,
-        updated_at)
-      VALUES (@name, @repo_path, @type, @working_branch, @merge_target, @accept_commit, @accept_followup,
-        @push_after_merge, @commit_message_format, @default_model, @default_turn_limit, @allowed_commands, @created_at,
-        @updated_at)
+      INSERT INTO projects (${insertCols.join(', ')})
+      VALUES (${insertCols.map((c) => `@${c}`).join(', ')})
       RETURNING *`);
-    this._update = db.prepare(`
-      UPDATE projects SET name = @name, repo_path = @repo_path, type = @type, working_branch = @working_branch,
-        merge_target = @merge_target, accept_commit = @accept_commit, accept_followup = @accept_followup,
-        push_after_merge = @push_after_merge, commit_message_format = @commit_message_format, default_model = @default_model,
-        default_turn_limit = @default_turn_limit, allowed_commands = @allowed_commands, updated_at = @updated_at
-      WHERE id = @id`);
+    this._update = db.prepare(`UPDATE projects SET ${COLUMNS.map((c) => `${c} = @${c}`).join(', ')} WHERE id = @id`);
     this._get = db.prepare('SELECT * FROM projects WHERE id = ?');
     this._list = db.prepare('SELECT * FROM projects ORDER BY name COLLATE NOCASE');
   }

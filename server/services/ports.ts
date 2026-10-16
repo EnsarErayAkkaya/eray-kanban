@@ -1,12 +1,15 @@
+import type { CheckResult, RunChecks } from '@shared/check';
 import type { Model } from '@shared/common';
 import type { BoardEvent, ProjectStatus } from '@shared/events';
-import type { NewProject, Project, ProjectPatch } from '@shared/project';
+import type { NewProject, PROJECT_TYPES, Project, ProjectPatch } from '@shared/project';
 import type { LogKind, Run, RunKind, RunLogLine, RunOutcome } from '@shared/run';
 import type { ReviewJson } from '@shared/review';
 import type { GitIssue, Task, TaskPatch } from '@shared/task';
 import type { StatusChange } from '../domain/taskMachine';
 
 export type Clock = () => string;
+
+type ProjectType = (typeof PROJECT_TYPES)[number];
 
 export interface ProjectRepo {
   create(project: NewProject): Project;
@@ -49,6 +52,12 @@ export interface TaskGitIssue {
   readonly detail: string;
   /** Branch that still needs pushing, for Retry push. */
   readonly pendingPush: string | null;
+}
+
+export interface CheckRepo {
+  /** Stores a run's check results and the pass and fail counts on the run itself. */
+  save(runId: number, results: readonly CheckResult[]): void;
+  listByTask(taskId: number): RunChecks[];
 }
 
 export interface SnapshotRepo {
@@ -214,6 +223,15 @@ export interface GitPort {
   push(repo: string, branch: string): Promise<PushResult>;
   mergeInto(repo: string, source: string, target: string, opts: { readonly push: boolean }): Promise<MergeResult>;
 }
+
+// How the orchestrator checks (and, for web, later screenshots) one kind of project.
+export interface ProjectAdapter {
+  /** Runs the project's check commands in its repo; an empty list when it has none. */
+  check(project: Project, signal: AbortSignal): Promise<CheckResult[]>;
+}
+
+// A new project type is one new entry here, never a branch on project.type.
+export type AdapterRegistry = Readonly<Record<ProjectType, ProjectAdapter>>;
 
 export interface WorkScheduler {
   kick(projectId: number): Promise<void>;

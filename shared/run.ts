@@ -30,6 +30,9 @@ export const RunSchema = z.object({
   costUsd: z.number().nonnegative().nullable(),
   error: z.string().nullable(),
   review: ReviewJsonSchema.nullable(),
+  /** null until the orchestrator has run this run's checks. */
+  checksPassed: Count.nullable(),
+  checksFailed: Count.nullable(),
   startedAt: TimestampSchema,
   endedAt: TimestampSchema.nullable(),
 });

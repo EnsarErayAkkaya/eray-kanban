@@ -1,10 +1,13 @@
+import type { CheckResult } from '@shared/check';
 import type { ProjectStatus } from '@shared/events';
+import type { Project } from '@shared/project';
 import type {
   CommitResult,
   FileDiff,
   GitPort,
   GuardResult,
   MergeResult,
+  ProjectAdapter,
   PushResult,
   RepoSnapshot,
   RepoStatus,
@@ -13,6 +16,39 @@ import type {
   TouchedFile,
   WorkScheduler,
 } from './ports';
+
+export const passedCheck = (command: string): CheckResult => ({
+  command,
+  exitCode: 0,
+  passed: true,
+  timedOut: false,
+  durationMs: 5,
+  output: 'ok',
+});
+
+export const failedCheck = (command: string, output = 'error TS2322: wrong type'): CheckResult => ({
+  command,
+  exitCode: 1,
+  passed: false,
+  timedOut: false,
+  durationMs: 5,
+  output,
+});
+
+// Each check() call takes the next queued answer; with none queued, every configured command passes.
+export class FakeAdapter implements ProjectAdapter {
+  readonly queue: CheckResult[][] = [];
+  readonly signals: AbortSignal[] = [];
+  onCheck: () => void = () => undefined;
+  check(project: Project, signal: AbortSignal): Promise<CheckResult[]> {
+    this.signals.push(signal);
+    this.onCheck();
+    return Promise.resolve(this.queue.shift() ?? project.checkCommands.map(passedCheck));
+  }
+  get calls(): number {
+    return this.signals.length;
+  }
+}
 
 export class FakeScheduler implements WorkScheduler {
   readonly kicked: number[] = [];

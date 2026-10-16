@@ -10,6 +10,12 @@ const FOLLOWUP_LABEL: Readonly<Record<(typeof ACCEPT_FOLLOWUPS)[number], string>
   merge: 'merge into the merge target',
 };
 
+const lines = (value: string) =>
+  value
+    .split('\n')
+    .map((c) => c.trim())
+    .filter(Boolean);
+
 interface Props {
   /** Given: edit this project's settings. Absent: create a new project. */
   readonly project?: Project;
@@ -37,10 +43,9 @@ export function ProjectForm({ project, onSubmit, onClose }: Props) {
       commitMessageFormat: text('commitMessageFormat'),
       defaultModel: text('defaultModel') as ProjectDraft['defaultModel'],
       defaultTurnLimit: Number(text('defaultTurnLimit')),
-      allowedCommands: text('allowedCommands')
-        .split('\n')
-        .map((c) => c.trim())
-        .filter(Boolean),
+      allowedCommands: lines(text('allowedCommands')),
+      checkCommands: lines(text('checkCommands')),
+      autoFix: form.get('autoFix') === 'on',
     });
     setBusy(false);
     if (result.ok) onClose();
@@ -122,6 +127,24 @@ export function ProjectForm({ project, onSubmit, onClose }: Props) {
         />
         <small>Leave empty to give the agent no shell at all. Shells and git are refused.</small>
       </label>
+
+      <fieldset className="panel__group">
+        <legend>Checks after each run</legend>
+        <label>
+          Check commands, one per line
+          <textarea
+            name="checkCommands"
+            rows={3}
+            placeholder={'npm run typecheck\nnpm run lint\nnpm test'}
+            defaultValue={project?.checkCommands.join('\n')}
+          />
+          <small>Run by the board itself, in order, without a shell. Their results show in the review.</small>
+        </label>
+        <label className="check">
+          <input type="checkbox" name="autoFix" defaultChecked={project?.autoFix ?? true} />
+          When checks fail, let the agent try once to fix them before review
+        </label>
+      </fieldset>
       {error && <p className="form-error">{error}</p>}
       <div className="panel__actions">
         <button type="button" className="btn btn--ghost" onClick={onClose}>
