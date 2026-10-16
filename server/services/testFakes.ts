@@ -68,11 +68,12 @@ export class FakeGit implements GitPort {
     this.snapshotCalls.push([repo, workingBranch]);
     return this.snapshotError ? Promise.reject(this.snapshotError) : Promise.resolve(this.snapshotResult);
   }
+  touched: TouchedFile[] = [];
   touchedFiles(): Promise<TouchedFile[]> {
-    return Promise.resolve([]);
+    return Promise.resolve(this.touched);
   }
-  diff(): Promise<FileDiff[]> {
-    return Promise.resolve([]);
+  diff(_repo: string, _snapshot: RepoSnapshot, files: readonly TouchedFile[]): Promise<FileDiff[]> {
+    return Promise.resolve(files.map((f) => ({ ...f, patch: `diff for ${f.path}`, binary: false, truncated: false })));
   }
   guardCheck(): Promise<GuardResult> {
     return Promise.resolve({ problems: this.guardProblems });

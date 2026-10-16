@@ -2,7 +2,7 @@ import { useEffect, useMemo, useReducer } from 'react';
 import type { AcceptOptions } from '@shared/review';
 import type { Task } from '@shared/task';
 import type { TaskEvent } from '@shared/taskStatus';
-import { type ProjectDraft, type TaskDraft, api, openBoardStream } from './apiClient';
+import { type ProjectDraft, type ProjectPatchDraft, type TaskDraft, api, openBoardStream } from './apiClient';
 import { type BoardState, boardReducer, initialBoardState } from './boardState';
 
 export type ActionResult = { readonly ok: true } | { readonly ok: false; readonly error: string };
@@ -31,10 +31,12 @@ function runReviewAction(taskId: number, action: ReviewAction): Promise<Task> {
 
 export interface BoardActions {
   createProject(draft: ProjectDraft): Promise<ActionResult>;
+  updateProject(projectId: number, patch: ProjectPatchDraft): Promise<ActionResult>;
   createTask(draft: TaskDraft): Promise<ActionResult>;
   sendEvent(taskId: number, event: TaskEvent): Promise<ActionResult>;
   stop(taskId: number): Promise<ActionResult>;
-  review(taskId: number, action: ReviewAction): Promise<ActionResult>;
+  /** inline: the caller shows the error itself instead of the board banner. */
+  review(taskId: number, action: ReviewAction, inline?: boolean): Promise<ActionResult>;
   loadHistory(taskId: number): Promise<ActionResult>;
   checkProject(projectId: number): Promise<ActionResult>;
   dismissError(): void;
@@ -80,13 +82,18 @@ export function useBoard(): { state: BoardState; actions: BoardActions } {
     return {
       createProject: (draft) =>
         attempt(async () => dispatch({ type: 'projectSaved', project: await api.createProject(draft) }), false),
+      updateProject: (projectId, patch) =>
+        attempt(async () => dispatch({ type: 'projectSaved', project: await api.updateProject(projectId, patch) }), false),
       createTask: (draft) =>
         attempt(async () => dispatch({ type: 'event', event: { type: 'task', task: await api.createTask(draft) } }), false),
       sendEvent: (taskId, event) =>
         attempt(async () => dispatch({ type: 'event', event: { type: 'task', task: await api.sendEvent(taskId, event) } }), true),
       stop: (taskId) => attempt(async () => void (await api.stop(taskId)), true),
-      review: (taskId, action) =>
-        attempt(async () => dispatch({ type: 'event', event: { type: 'task', task: await runReviewAction(taskId, action) } }), true),
+      review: (taskId, action, inline = false) =>
+        attempt(
+          async () => dispatch({ type: 'event', event: { type: 'task', task: await runReviewAction(taskId, action) } }),
+          !inline,
+        ),
       loadHistory: (taskId) =>
         attempt(async () => {
           const runs = await api.runs(taskId);

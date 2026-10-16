@@ -50,6 +50,31 @@ describe('ReviewService', () => {
     service = new ReviewService({ projects, tasks, runs, snapshots, git, scheduler, events: { publish: (e) => events.push(e) } });
   });
 
+  describe('changes', () => {
+    it('shows touched files with diffs against the snapshot', async () => {
+      git.touched = [{ path: 'src/app.ts', change: 'modified' }];
+      expect(await service.changes(inReview().id)).toEqual({
+        available: true,
+        reason: null,
+        baseHead: SNAPSHOT.head,
+        files: [{ path: 'src/app.ts', change: 'modified', patch: 'diff for src/app.ts', binary: false, truncated: false }],
+      });
+    });
+
+    it('explains why a finished or unstarted task has nothing to show', async () => {
+      expect(await service.changes(tasks.create(newTask(project.id)).id)).toMatchObject({ available: false, files: [] });
+      const task = inReview();
+      tasks.setCommitSha(task.id, 'c0ffee1234');
+      move(tasks.get(task.id) ?? task, 'accept');
+      expect((await service.changes(task.id)).reason).toBe('Committed as c0ffee12');
+    });
+
+    it('reports a task without a snapshot', async () => {
+      const task = move(tasks.create(newTask(project.id)), 'promote', 'start', 'submit');
+      expect((await service.changes(task.id)).reason).toBe('This task has no snapshot to compare against');
+    });
+  });
+
   describe('reject', () => {
     it('moves the task back to In Progress and resumes with the feedback', () => {
       const task = inReview();

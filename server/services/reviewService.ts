@@ -1,8 +1,8 @@
 import type { Project } from '@shared/project';
-import type { AcceptOptions } from '@shared/review';
+import type { AcceptOptions, ReviewChanges } from '@shared/review';
 import type { Task } from '@shared/task';
 import { ConflictError, NotFoundError, ValidationError } from '../domain/errors';
-import { type TaskEvent, transition } from '../domain/taskMachine';
+import { type TaskEvent, occupiesProject, transition } from '../domain/taskMachine';
 import { commitMessage } from './commitMessage';
 import type {
   BoardEventSink,
@@ -30,6 +30,21 @@ export class ReviewService {
   private readonly _busy = new Set<number>();
 
   constructor(private readonly _deps: ReviewDeps) {}
+
+  /** Touched files and diffs against the task's snapshot, read now; only while the task holds its project. */
+  async changes(taskId: number): Promise<ReviewChanges> {
+    const task = this._require(taskId);
+    const none = (reason: string): ReviewChanges => ({ available: false, reason, baseHead: null, files: [] });
+    if (!occupiesProject(task.status)) {
+      return none(task.commitSha ? `Committed as ${task.commitSha.slice(0, 8)}` : 'This task is not active, so there is nothing to compare');
+    }
+    const snapshot = this._deps.snapshots.get(taskId);
+    if (!snapshot) return none('This task has no snapshot to compare against');
+
+    const repo = this._projectOf(task).repoPath;
+    const files = await this._deps.git.diff(repo, snapshot, await this._deps.git.touchedFiles(repo, snapshot));
+    return { available: true, reason: null, baseHead: snapshot.head, files };
+  }
 
   /** The same session resumes with the feedback, so the agent keeps its context. */
   reject(taskId: number, feedback: string): Task {

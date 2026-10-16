@@ -4,17 +4,7 @@ import type { Task } from '@shared/task';
 import type { TaskStatus } from '@shared/taskStatus';
 import { LogView } from './LogView';
 
-export type CardActionId =
-  | 'promote'
-  | 'demote'
-  | 'stop'
-  | 'cancel'
-  | 'rollback'
-  | 'accept'
-  | 'acceptNoCommit'
-  | 'reject'
-  | 'retryPush'
-  | 'resolveIssue';
+export type CardActionId = 'promote' | 'demote' | 'stop' | 'cancel' | 'open' | 'retryPush' | 'resolveIssue';
 
 interface CardAction {
   readonly label: string;
@@ -22,8 +12,9 @@ interface CardAction {
   readonly tone?: 'danger' | 'primary';
 }
 
-const ROLLBACK: CardAction = { label: 'Cancel & roll back', id: 'rollback', tone: 'danger' };
+const DETAILS: CardAction = { label: 'Details', id: 'open' };
 
+// Review decisions and rollback live in the review panel, so each has one place and one confirm.
 const ACTIONS: Readonly<Record<TaskStatus, readonly CardAction[]>> = {
   backlog: [
     { label: 'To Todo', id: 'promote' },
@@ -33,16 +24,11 @@ const ACTIONS: Readonly<Record<TaskStatus, readonly CardAction[]>> = {
     { label: 'To Backlog', id: 'demote' },
     { label: 'Cancel', id: 'cancel', tone: 'danger' },
   ],
-  in_progress: [{ label: 'Stop', id: 'stop' }, ROLLBACK],
-  needs_input: [ROLLBACK],
-  in_review: [
-    { label: 'Accept', id: 'accept', tone: 'primary' },
-    { label: 'Accept, no commit', id: 'acceptNoCommit' },
-    { label: 'Reject…', id: 'reject' },
-    ROLLBACK,
-  ],
-  done: [],
-  cancelled: [],
+  in_progress: [{ label: 'Stop', id: 'stop' }, DETAILS],
+  needs_input: [DETAILS],
+  in_review: [{ label: 'Review', id: 'open', tone: 'primary' }],
+  done: [DETAILS],
+  cancelled: [DETAILS],
 };
 
 const ISSUE_LABEL: Readonly<Record<NonNullable<Task['gitIssue']>, string>> = {

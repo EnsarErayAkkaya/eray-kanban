@@ -1,12 +1,13 @@
 import { z } from 'zod';
 import { type BoardEvent, BoardEventSchema, ProjectStatusSchema } from '@shared/events';
-import { type CreateProjectInput, ProjectSchema } from '@shared/project';
-import type { AcceptOptions } from '@shared/review';
+import { type CreateProjectInput, ProjectSchema, type UpdateProjectInput } from '@shared/project';
+import { type AcceptOptions, ReviewChangesSchema } from '@shared/review';
 import { RunLogLineSchema, RunSchema } from '@shared/run';
 import { type CreateTaskInput, TaskSchema } from '@shared/task';
 import type { TaskEvent } from '@shared/taskStatus';
 
 export type ProjectDraft = z.input<typeof CreateProjectInput>;
+export type ProjectPatchDraft = z.input<typeof UpdateProjectInput>;
 export type TaskDraft = z.input<typeof CreateTaskInput>;
 
 export class ApiError extends Error {
@@ -50,6 +51,8 @@ export const api = {
   retryPush: (taskId: number) => call(TaskSchema, 'POST', `/tasks/${taskId}/retry-push`),
   resolveIssue: (taskId: number) => call(TaskSchema, 'POST', `/tasks/${taskId}/resolve-issue`),
   createProject: (draft: ProjectDraft) => call(ProjectSchema, 'POST', '/projects', draft),
+  updateProject: (projectId: number, patch: ProjectPatchDraft) => call(ProjectSchema, 'PATCH', `/projects/${projectId}`, patch),
+  changes: (taskId: number) => call(ReviewChangesSchema, 'GET', `/tasks/${taskId}/changes`),
   tasks: () => call(z.array(TaskSchema), 'GET', '/tasks'),
   createTask: (draft: TaskDraft) => call(TaskSchema, 'POST', '/tasks', draft),
   sendEvent: (taskId: number, event: TaskEvent) => call(TaskSchema, 'POST', `/tasks/${taskId}/events`, { event }),

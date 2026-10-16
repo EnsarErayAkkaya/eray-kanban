@@ -1,19 +1,31 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { Task } from '@shared/task';
 import { useBoard } from '../state/useBoard';
 import { Board } from './Board';
 import { ProjectForm } from './ProjectForm';
+import { ReviewPanel } from './ReviewPanel';
 import type { CardActionId } from './TaskCard';
 import { TaskForm } from './TaskForm';
 
-type Panel = 'none' | 'project' | 'task';
+type Panel = 'none' | 'project' | 'settings' | 'task';
 
 export function App() {
   const { state, actions } = useBoard();
   const [projectId, setProjectId] = useState<number | null>(null);
   const [panel, setPanel] = useState<Panel>('none');
+  const [openTaskId, setOpenTaskId] = useState<number | null>(null);
 
   const visibleTasks = projectId === null ? state.tasks : state.tasks.filter((t) => t.projectId === projectId);
+  // Settings act on the filtered project, or on the only one there is.
+  const settingsProject = state.projects.find((p) => p.id === projectId) ?? (state.projects.length === 1 ? state.projects[0] : undefined);
+  const openTask = state.tasks.find((t) => t.id === openTaskId);
+  const closeReview = useCallback(() => setOpenTaskId(null), []);
+
+  const openReview = (task: Task) => {
+    setOpenTaskId(task.id);
+    void actions.loadHistory(task.id);
+  };
+
   const onAction = (task: Task, action: CardActionId) => {
     switch (action) {
       case 'promote':
@@ -23,21 +35,8 @@ export function App() {
         return void actions.stop(task.id);
       case 'cancel':
         return void actions.review(task.id, { kind: 'cancel' });
-      case 'rollback':
-        // Until the review panel lands, a plain confirm guards the one destructive button.
-        if (window.confirm(`Stop the agent if needed and roll task #${task.id} back to how the repo was before it?`)) {
-          void actions.review(task.id, { kind: 'cancel' });
-        }
-        return;
-      case 'accept':
-        return void actions.review(task.id, { kind: 'accept', options: {} });
-      case 'acceptNoCommit':
-        return void actions.review(task.id, { kind: 'accept', options: { commit: false, followup: 'none' } });
-      case 'reject': {
-        const feedback = window.prompt(`Feedback for the agent on task #${task.id}:`)?.trim();
-        if (feedback) void actions.review(task.id, { kind: 'reject', feedback });
-        return;
-      }
+      case 'open':
+        return openReview(task);
       case 'retryPush':
         return void actions.review(task.id, { kind: 'retryPush' });
       case 'resolveIssue':
@@ -61,6 +60,14 @@ export function App() {
             </option>
           ))}
         </select>
+        <button
+          className="btn"
+          disabled={!settingsProject}
+          title={settingsProject ? undefined : 'Pick a project first'}
+          onClick={() => setPanel('settings')}
+        >
+          Project settings
+        </button>
         <div className="topbar__spacer" />
         <span className={`status${state.connected ? ' status--live' : ''}`}>{state.connected ? 'Live' : 'Offline'}</span>
         <button className="btn" onClick={() => setPanel('project')}>
@@ -94,6 +101,14 @@ export function App() {
         ))}
 
       {panel === 'project' && <ProjectForm onSubmit={actions.createProject} onClose={() => setPanel('none')} />}
+      {panel === 'settings' && settingsProject && (
+        <ProjectForm
+          key={settingsProject.id}
+          project={settingsProject}
+          onSubmit={(draft) => actions.updateProject(settingsProject.id, draft)}
+          onClose={() => setPanel('none')}
+        />
+      )}
       {panel === 'task' && (
         <TaskForm
           projects={state.projects}
@@ -119,6 +134,19 @@ export function App() {
           logs={state.logs}
           onAction={onAction}
           onOpenLog={(task) => void actions.loadHistory(task.id)}
+        />
+      )}
+
+      {openTask && (
+        <ReviewPanel
+          key={openTask.id}
+          task={openTask}
+          project={state.projects.find((p) => p.id === openTask.projectId)}
+          runs={state.runs[openTask.id] ?? []}
+          log={state.logs[openTask.id] ?? []}
+          onReview={(action) => actions.review(openTask.id, action, true)}
+          onStop={() => void actions.stop(openTask.id)}
+          onClose={closeReview}
         />
       )}
     </div>
