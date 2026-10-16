@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { type BoardEvent, BoardEventSchema } from '@shared/events';
+import { type BoardEvent, BoardEventSchema, ProjectStatusSchema } from '@shared/events';
 import { type CreateProjectInput, ProjectSchema } from '@shared/project';
 import { RunLogLineSchema, RunSchema } from '@shared/run';
 import { type CreateTaskInput, TaskSchema } from '@shared/task';
@@ -41,6 +41,9 @@ async function call<T>(schema: z.ZodType<T>, method: 'GET' | 'POST' | 'PATCH', p
 
 export const api = {
   projects: () => call(z.array(ProjectSchema), 'GET', '/projects'),
+  projectStatuses: () => call(z.array(ProjectStatusSchema), 'GET', '/projects/status'),
+  checkProject: (projectId: number) => call(z.object({ checking: z.boolean() }), 'POST', `/projects/${projectId}/check`),
+  reject: (taskId: number, feedback: string) => call(TaskSchema, 'POST', `/tasks/${taskId}/reject`, { feedback }),
   createProject: (draft: ProjectDraft) => call(ProjectSchema, 'POST', '/projects', draft),
   tasks: () => call(z.array(TaskSchema), 'GET', '/tasks'),
   createTask: (draft: TaskDraft) => call(TaskSchema, 'POST', '/tasks', draft),

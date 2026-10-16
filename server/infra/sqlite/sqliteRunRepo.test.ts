@@ -34,6 +34,14 @@ describe('SqliteRunRepo', () => {
     expect(() => repo.setSessionId(999, 'x')).toThrow(NotFoundError);
   });
 
+  it('stores the review JSON', () => {
+    const { id } = repo.start(run);
+    expect(repo.get(id)?.review).toBeNull();
+    repo.setReview(id, { outcome: 'done', summary: 'Added it', notes: [], concerns: ['untested'] });
+    expect(repo.get(id)?.review).toEqual({ outcome: 'done', summary: 'Added it', notes: [], concerns: ['untested'] });
+    expect(() => repo.setReview(999, { outcome: 'needs_input', question: 'q', summary: '' })).toThrow(NotFoundError);
+  });
+
   it('records the pid and lists only running runs', () => {
     const live = repo.start(run);
     const ended = repo.start(run);

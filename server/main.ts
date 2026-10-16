@@ -6,13 +6,16 @@ import { buildServer } from './api/buildServer';
 import { ClaudeCliAgent } from './infra/claudeCli/claudeCliAgent';
 import { EventHub } from './infra/events/eventHub';
 import { FsRepoProbe } from './infra/fs/repoProbe';
+import { GitService } from './infra/git/gitService';
 import { ProcessSupervisor } from './infra/process/processSupervisor';
 import { MIGRATIONS_DIR, openDatabase } from './infra/sqlite/database';
 import { SqliteProjectRepo } from './infra/sqlite/sqliteProjectRepo';
 import { SqliteRunRepo } from './infra/sqlite/sqliteRunRepo';
+import { SqliteSnapshotRepo } from './infra/sqlite/sqliteSnapshotRepo';
 import { SqliteTaskRepo } from './infra/sqlite/sqliteTaskRepo';
 import type { Logger } from './services/ports';
 import { ProjectService } from './services/projectService';
+import { ReviewService } from './services/reviewService';
 import { Scheduler } from './services/scheduler';
 import { TaskService } from './services/taskService';
 
@@ -21,7 +24,7 @@ const HOST = '127.0.0.1';
 const PORT = Number(process.env.KANBAN_PORT ?? 4317);
 const UI_DEV_PORT = Number(process.env.KANBAN_UI_PORT ?? 5173);
 const DATA_DIR = process.env.KANBAN_DATA_DIR ?? fileURLToPath(new URL('../data/', import.meta.url));
-const PROMPT_TEMPLATE = fileURLToPath(new URL('./services/prompts/task.md', import.meta.url));
+const prompt = (name: string) => fileURLToPath(new URL(`./services/prompts/${name}`, import.meta.url));
 const RUN_TIMEOUT_MS = Number(process.env.KANBAN_RUN_TIMEOUT_MS ?? 30 * 60_000);
 
 async function main(): Promise<void> {
@@ -40,16 +43,30 @@ async function main(): Promise<void> {
     info: (msg) => logRef.current?.info(msg),
     error: (msg, err) => logRef.current?.error(msg, err),
   };
-  const scheduler = new Scheduler(projectRepo, taskRepo, runRepo, new ClaudeCliAgent(supervisor), hub, log, {
-    promptTemplate: fs.readFileSync(PROMPT_TEMPLATE, 'utf8'),
-    runTimeoutMs: RUN_TIMEOUT_MS,
-    newSessionId: () => crypto.randomUUID(),
-  });
+  const scheduler = new Scheduler(
+    {
+      projects: projectRepo,
+      tasks: taskRepo,
+      runs: runRepo,
+      snapshots: new SqliteSnapshotRepo(db, clock),
+      agent: new ClaudeCliAgent(supervisor),
+      git: new GitService(supervisor),
+      events: hub,
+      log,
+    },
+    {
+      taskTemplate: fs.readFileSync(prompt('task.md'), 'utf8'),
+      feedbackTemplate: fs.readFileSync(prompt('feedback.md'), 'utf8'),
+      runTimeoutMs: RUN_TIMEOUT_MS,
+      newSessionId: () => crypto.randomUUID(),
+    },
+  );
 
   const app = buildServer(
     {
-      projects: new ProjectService(projectRepo, taskRepo, new FsRepoProbe()),
+      projects: new ProjectService(projectRepo, taskRepo, new FsRepoProbe(), scheduler),
       tasks: new TaskService(projectRepo, taskRepo, runRepo, scheduler, hub),
+      review: new ReviewService(taskRepo, runRepo, scheduler, hub),
       subscribe: (listener) => hub.subscribe(listener),
       heartbeatMs: 25_000,
     },

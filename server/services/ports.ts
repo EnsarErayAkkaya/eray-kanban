@@ -1,8 +1,9 @@
 import type { Model } from '@shared/common';
-import type { BoardEvent } from '@shared/events';
+import type { BoardEvent, ProjectStatus } from '@shared/events';
 import type { NewProject, Project, ProjectPatch } from '@shared/project';
 import type { LogKind, Run, RunKind, RunLogLine, RunOutcome } from '@shared/run';
-import type { Task, TaskPatch } from '@shared/task';
+import type { ReviewJson } from '@shared/review';
+import type { GitIssue, Task, TaskPatch } from '@shared/task';
 import type { StatusChange } from '../domain/taskMachine';
 
 export type Clock = () => string;
@@ -38,6 +39,13 @@ export interface TaskRepo {
   /** Highest priority, then lowest position; skips tasks whose dependency is not done. */
   nextTodo(projectId: number): Task | undefined;
   activeTask(projectId: number): Task | undefined;
+  setGitIssue(id: number, issue: GitIssue | null, detail: string | null): Task;
+}
+
+export interface SnapshotRepo {
+  /** One per task; a second save for the same task fails with ConflictError. */
+  save(taskId: number, snapshot: RepoSnapshot): void;
+  get(taskId: number): RepoSnapshot | undefined;
 }
 
 export interface NewRun {
@@ -73,6 +81,7 @@ export interface RunRepo {
   start(run: NewRun): Run;
   setSessionId(runId: number, sessionId: string): void;
   setPid(runId: number, pid: number): void;
+  setReview(runId: number, review: ReviewJson): void;
   listRunning(): Run[];
   /** Only a running run can finish; a second finish fails with ConflictError. */
   finish(runId: number, end: RunEnd): Run;
@@ -199,6 +208,8 @@ export interface GitPort {
 export interface WorkScheduler {
   kick(projectId: number): Promise<void>;
   stop(taskId: number): boolean;
+  resumeWithFeedback(taskId: number, feedback: string): Promise<void>;
+  statuses(): ProjectStatus[];
 }
 
 export interface RepoProbe {

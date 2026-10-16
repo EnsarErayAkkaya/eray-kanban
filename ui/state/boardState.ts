@@ -1,4 +1,4 @@
-import type { BoardEvent } from '@shared/events';
+import type { BoardEvent, ProjectStatus } from '@shared/events';
 import type { Project } from '@shared/project';
 import type { Run, RunLogLine } from '@shared/run';
 import type { Task } from '@shared/task';
@@ -15,10 +15,17 @@ export interface BoardState {
   readonly runs: Readonly<Record<number, readonly Run[]>>;
   /** By task id, every run's lines in order. */
   readonly logs: Readonly<Record<number, readonly RunLogLine[]>>;
+  /** By project id: why its next task cannot start. */
+  readonly blocked: Readonly<Record<number, string>>;
 }
 
 export type BoardAction =
-  | { readonly type: 'loaded'; readonly projects: readonly Project[]; readonly tasks: readonly Task[] }
+  | {
+      readonly type: 'loaded';
+      readonly projects: readonly Project[];
+      readonly tasks: readonly Task[];
+      readonly statuses: readonly ProjectStatus[];
+    }
   | { readonly type: 'projectSaved'; readonly project: Project }
   | { readonly type: 'event'; readonly event: BoardEvent }
   | { readonly type: 'runsLoaded'; readonly taskId: number; readonly runs: readonly Run[] }
@@ -34,7 +41,13 @@ export const initialBoardState: BoardState = {
   tasks: [],
   runs: {},
   logs: {},
+  blocked: {},
 };
+
+function setBlocked(blocked: Readonly<Record<number, string>>, status: ProjectStatus): Record<number, string> {
+  const others = Object.fromEntries(Object.entries(blocked).filter(([id]) => Number(id) !== status.projectId));
+  return status.blocked === null ? others : { ...others, [status.projectId]: status.blocked };
+}
 
 function upsert<T extends { readonly id: number }>(items: readonly T[], item: T): T[] {
   const index = items.findIndex((i) => i.id === item.id);
@@ -62,13 +75,21 @@ function applyEvent(state: BoardState, event: BoardEvent): BoardState {
       return { ...state, runs: { ...state.runs, [event.run.taskId]: upsert(state.runs[event.run.taskId] ?? [], event.run) } };
     case 'log':
       return { ...state, logs: { ...state.logs, [event.taskId]: mergeLog(state.logs[event.taskId] ?? [], event.lines) } };
+    case 'projectStatus':
+      return { ...state, blocked: setBlocked(state.blocked, event) };
   }
 }
 
 export function boardReducer(state: BoardState, action: BoardAction): BoardState {
   switch (action.type) {
     case 'loaded':
-      return { ...state, loaded: true, projects: action.projects, tasks: action.tasks };
+      return {
+        ...state,
+        loaded: true,
+        projects: action.projects,
+        tasks: action.tasks,
+        blocked: action.statuses.reduce<Record<number, string>>((acc, s) => setBlocked(acc, s), {}),
+      };
     case 'projectSaved':
       return { ...state, projects: upsert(state.projects, action.project) };
     case 'event':

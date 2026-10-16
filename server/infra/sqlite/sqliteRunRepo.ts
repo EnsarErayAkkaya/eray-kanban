@@ -1,10 +1,14 @@
 import type { Database, Statement, Transaction } from 'better-sqlite3';
+import { type ReviewJson, ReviewJsonSchema } from '@shared/review';
 import { type Run, type RunLogLine, RunLogLineSchema, RunSchema } from '@shared/run';
 import { ConflictError, NotFoundError } from '../../domain/errors';
 import type { Clock, NewLogLine, NewRun, RunEnd, RunRepo } from '../../services/ports';
 import { sqliteCode } from './sqliteUtil';
 
+const StoredReview = ReviewJsonSchema.nullable();
+
 interface RunRow {
+  review_json: string | null;
   id: number;
   task_id: number;
   kind: string;
@@ -64,6 +68,7 @@ function fromRow(r: RunRow): Run {
     cacheReadTokens: r.cache_read_tokens,
     costUsd: r.cost_usd,
     error: r.error,
+    review: StoredReview.parse(r.review_json === null ? null : JSON.parse(r.review_json)),
     startedAt: r.started_at,
     endedAt: r.ended_at,
   });
@@ -80,6 +85,7 @@ export class SqliteRunRepo implements RunRepo {
   >;
   private readonly _setSession: Statement<[string, number]>;
   private readonly _setPid: Statement<[number, number]>;
+  private readonly _setReview: Statement<[string, number]>;
   private readonly _running: Statement<[], RunRow>;
   private readonly _finish: Statement<[FinishParams]>;
   private readonly _get: Statement<[number], RunRow>;
@@ -97,6 +103,7 @@ export class SqliteRunRepo implements RunRepo {
       RETURNING *`);
     this._setSession = db.prepare('UPDATE runs SET session_id = ? WHERE id = ?');
     this._setPid = db.prepare('UPDATE runs SET pid = ? WHERE id = ?');
+    this._setReview = db.prepare('UPDATE runs SET review_json = ? WHERE id = ?');
     this._running = db.prepare("SELECT * FROM runs WHERE outcome = 'running' ORDER BY id");
     this._finish = db.prepare(`
       UPDATE runs SET outcome = @outcome, num_turns = @num_turns, input_tokens = @input_tokens,
@@ -145,6 +152,10 @@ export class SqliteRunRepo implements RunRepo {
 
   setPid(runId: number, pid: number): void {
     if (this._setPid.run(pid, runId).changes === 0) throw new NotFoundError('run', runId);
+  }
+
+  setReview(runId: number, review: ReviewJson): void {
+    if (this._setReview.run(JSON.stringify(review), runId).changes === 0) throw new NotFoundError('run', runId);
   }
 
   listRunning(): Run[] {

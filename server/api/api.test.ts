@@ -7,7 +7,9 @@ import { SqliteRunRepo } from '../infra/sqlite/sqliteRunRepo';
 import { SqliteTaskRepo } from '../infra/sqlite/sqliteTaskRepo';
 import { fakeClock, memoryDb } from '../infra/sqlite/testDb';
 import { ProjectService } from '../services/projectService';
+import { ReviewService } from '../services/reviewService';
 import { TaskService } from '../services/taskService';
+import { FakeScheduler } from '../services/testFakes';
 import { buildServer } from './buildServer';
 
 const API_PORT = 4317;
@@ -17,6 +19,7 @@ const HOST = `127.0.0.1:${API_PORT}`;
 describe('HTTP API', () => {
   let app: FastifyInstance;
   let kicked: number[];
+  let scheduler: FakeScheduler;
 
   const send = (method: 'GET' | 'POST' | 'PATCH', url: string, payload?: object, headers: Record<string, string> = {}) =>
     app.inject({ method, url, headers: { host: HOST, ...headers }, ...(payload === undefined ? {} : { payload }) });
@@ -32,12 +35,13 @@ describe('HTTP API', () => {
     const tasks = new SqliteTaskRepo(db, clock);
     const runs = new SqliteRunRepo(db, clock);
     const hub = new EventHub();
-    kicked = [];
-    const scheduler = { kick: async (id: number) => void kicked.push(id), stop: () => false };
+    scheduler = new FakeScheduler();
+    kicked = scheduler.kicked;
     app = buildServer(
       {
-        projects: new ProjectService(projects, tasks, { isGitRepo: (p) => p.startsWith('/repos/') }),
+        projects: new ProjectService(projects, tasks, { isGitRepo: (p) => p.startsWith('/repos/') }, scheduler),
         tasks: new TaskService(projects, tasks, runs, scheduler, hub),
+        review: new ReviewService(tasks, runs, scheduler, hub),
         subscribe: (l) => hub.subscribe(l),
         heartbeatMs: 60_000,
       },
@@ -129,6 +133,25 @@ describe('HTTP API', () => {
       expect((await send('GET', '/api/tasks/999/runs')).statusCode).toBe(404);
       expect((await send('GET', '/api/tasks/abc/runs')).statusCode).toBe(400);
       expect((await send('PATCH', `/api/tasks/${task.id}`, { status: 'done' })).statusCode).toBe(400);
+    });
+
+    it('validates reject feedback and refuses tasks not in review', async () => {
+      const { id: projectId } = await createProject();
+      const task = await createTask(projectId);
+      expect((await send('POST', `/api/tasks/${task.id}/reject`, { feedback: '  ' })).statusCode).toBe(400);
+      const res = await send('POST', `/api/tasks/${task.id}/reject`, { feedback: 'Use a toggle' });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe('Only a task in review can be rejected');
+    });
+  });
+
+  describe('project status', () => {
+    it('lists statuses and starts a check', async () => {
+      const { id } = await createProject();
+      expect((await send('GET', '/api/projects/status')).json()).toEqual([]);
+      expect((await send('POST', `/api/projects/${id}/check`)).statusCode).toBe(202);
+      expect(scheduler.kicked).toEqual([id]);
+      expect((await send('POST', '/api/projects/99/check')).statusCode).toBe(404);
     });
   });
 

@@ -8,22 +8,8 @@ import { SqliteProjectRepo } from '../infra/sqlite/sqliteProjectRepo';
 import { SqliteRunRepo } from '../infra/sqlite/sqliteRunRepo';
 import { SqliteTaskRepo } from '../infra/sqlite/sqliteTaskRepo';
 import { fakeClock, memoryDb, seedProject } from '../infra/sqlite/testDb';
-import type { WorkScheduler } from './ports';
 import { TaskService } from './taskService';
-
-class FakeScheduler implements WorkScheduler {
-  readonly kicked: number[] = [];
-  readonly stopped: number[] = [];
-  running = false;
-  kick(projectId: number): Promise<void> {
-    this.kicked.push(projectId);
-    return Promise.resolve();
-  }
-  stop(taskId: number): boolean {
-    this.stopped.push(taskId);
-    return this.running;
-  }
-}
+import { FakeScheduler } from './testFakes';
 
 describe('TaskService', () => {
   let tasks: SqliteTaskRepo;

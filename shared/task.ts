@@ -3,6 +3,8 @@ import { IdSchema, ModelSchema, TimestampSchema, TurnLimitSchema } from './commo
 import { TASK_EVENTS, TASK_STATUSES } from './taskStatus';
 
 export const PRIORITIES = ['high', 'normal', 'low'] as const;
+export const GIT_ISSUES = ['guard_tripped', 'merge_conflict', 'push_failed'] as const;
+export type GitIssue = (typeof GIT_ISSUES)[number];
 
 const RouteSchema = z.string().trim().startsWith('/', 'routes start with /').max(200);
 
@@ -24,6 +26,9 @@ export const TaskSchema = z.object({
   ...fields,
   status: z.enum(TASK_STATUSES),
   position: z.number(),
+  gitIssue: z.enum(GIT_ISSUES).nullable(),
+  gitIssueDetail: z.string().nullable(),
+  commitSha: z.string().nullable(),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
 });

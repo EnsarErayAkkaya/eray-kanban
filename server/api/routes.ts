@@ -4,12 +4,15 @@ import { IdSchema } from '@shared/common';
 import type { BoardEvent } from '@shared/events';
 import { CreateProjectInput, UpdateProjectInput } from '@shared/project';
 import { CreateTaskInput, TaskEventInput, UpdateTaskInput } from '@shared/task';
+import { RejectTaskInput } from '@shared/review';
 import type { ProjectService } from '../services/projectService';
+import type { ReviewService } from '../services/reviewService';
 import type { TaskService } from '../services/taskService';
 
 export interface RouteDeps {
   readonly projects: ProjectService;
   readonly tasks: TaskService;
+  readonly review: ReviewService;
   readonly subscribe: (listener: (event: BoardEvent) => void) => () => void;
   readonly heartbeatMs: number;
 }
@@ -24,6 +27,12 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get('/api/health', async () => ({ ok: true }));
 
   app.get('/api/projects', async () => projects.list());
+  app.get('/api/projects/status', async () => projects.statuses());
+  app.post('/api/projects/:id/check', async (req, reply) => {
+    projects.check(IdParams.parse(req.params).id);
+    reply.code(202);
+    return { checking: true };
+  });
   app.post('/api/projects', async (req, reply) => {
     reply.code(201);
     return projects.create(CreateProjectInput.parse(req.body));
@@ -42,6 +51,9 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   });
   app.post('/api/tasks/:id/events', async (req) => {
     return tasks.applyBoardEvent(IdParams.parse(req.params).id, TaskEventInput.parse(req.body).event);
+  });
+  app.post('/api/tasks/:id/reject', async (req) => {
+    return deps.review.reject(IdParams.parse(req.params).id, RejectTaskInput.parse(req.body).feedback);
   });
   app.post('/api/tasks/:id/stop', async (req, reply) => {
     tasks.stop(IdParams.parse(req.params).id);

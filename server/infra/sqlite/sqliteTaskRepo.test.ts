@@ -111,6 +111,18 @@ describe('SqliteTaskRepo', () => {
     });
   });
 
+  it('sets and clears a git issue without touching the status', () => {
+    const task = repo.create(newTask(projectId));
+    expect(task).toMatchObject({ gitIssue: null, gitIssueDetail: null, commitSha: null });
+    expect(repo.setGitIssue(task.id, 'push_failed', 'rejected')).toMatchObject({
+      status: 'backlog',
+      gitIssue: 'push_failed',
+      gitIssueDetail: 'rejected',
+    });
+    expect(repo.setGitIssue(task.id, null, 'ignored')).toMatchObject({ gitIssue: null, gitIssueDetail: null });
+    expect(() => repo.setGitIssue(999, null, null)).toThrow(NotFoundError);
+  });
+
   it('reports the active task of a project', () => {
     expect(repo.activeTask(projectId)).toBeUndefined();
     const task = move(repo.create(newTask(projectId)), 'promote', 'start', 'askInput');

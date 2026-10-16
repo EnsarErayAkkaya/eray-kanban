@@ -13,6 +13,7 @@ interface ProjectRow {
   merge_target: string | null;
   accept_commit: number;
   accept_followup: string;
+  push_after_merge: number;
   commit_message_format: string;
   default_model: string;
   default_turn_limit: number;
@@ -33,6 +34,7 @@ function fromRow(r: ProjectRow): Project {
     mergeTarget: r.merge_target,
     acceptCommit: r.accept_commit === 1,
     acceptFollowup: r.accept_followup,
+    pushAfterMerge: r.push_after_merge === 1,
     commitMessageFormat: r.commit_message_format,
     defaultModel: r.default_model,
     defaultTurnLimit: r.default_turn_limit,
@@ -51,6 +53,7 @@ function toParams(p: NewProject, updatedAt: string): ProjectParams {
     merge_target: p.mergeTarget,
     accept_commit: toFlag(p.acceptCommit),
     accept_followup: p.acceptFollowup,
+    push_after_merge: toFlag(p.pushAfterMerge),
     commit_message_format: p.commitMessageFormat,
     default_model: p.defaultModel,
     default_turn_limit: p.defaultTurnLimit,
@@ -71,14 +74,16 @@ export class SqliteProjectRepo implements ProjectRepo {
   ) {
     this._insert = db.prepare(`
       INSERT INTO projects (name, repo_path, type, working_branch, merge_target, accept_commit, accept_followup,
-        commit_message_format, default_model, default_turn_limit, allowed_commands, created_at, updated_at)
+        push_after_merge, commit_message_format, default_model, default_turn_limit, allowed_commands, created_at,
+        updated_at)
       VALUES (@name, @repo_path, @type, @working_branch, @merge_target, @accept_commit, @accept_followup,
-        @commit_message_format, @default_model, @default_turn_limit, @allowed_commands, @created_at, @updated_at)
+        @push_after_merge, @commit_message_format, @default_model, @default_turn_limit, @allowed_commands, @created_at,
+        @updated_at)
       RETURNING *`);
     this._update = db.prepare(`
       UPDATE projects SET name = @name, repo_path = @repo_path, type = @type, working_branch = @working_branch,
         merge_target = @merge_target, accept_commit = @accept_commit, accept_followup = @accept_followup,
-        commit_message_format = @commit_message_format, default_model = @default_model,
+        push_after_merge = @push_after_merge, commit_message_format = @commit_message_format, default_model = @default_model,
         default_turn_limit = @default_turn_limit, allowed_commands = @allowed_commands, updated_at = @updated_at
       WHERE id = @id`);
     this._get = db.prepare('SELECT * FROM projects WHERE id = ?');

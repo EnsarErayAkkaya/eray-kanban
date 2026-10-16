@@ -17,6 +17,9 @@ const task = (id: number, status: Task['status'] = 'backlog'): Task => ({
   model: 'sonnet',
   turnLimit: 30,
   dependsOn: null,
+  gitIssue: null,
+  gitIssueDetail: null,
+  commitSha: null,
   createdAt: '2026-10-16T09:00:00.000Z',
   updatedAt: '2026-10-16T09:00:00.000Z',
 });
@@ -48,11 +51,12 @@ const run = (id: number, outcome: Run['outcome'] = 'running'): Run => ({
   error: null,
   startedAt: '2026-10-16T09:00:00.000Z',
   endedAt: null,
+  review: null,
 });
 
 describe('boardReducer', () => {
   it('adds new tasks and replaces known ones from events', () => {
-    let state = boardReducer(initialBoardState, { type: 'loaded', projects: [], tasks: [task(1), task(2)] });
+    let state = boardReducer(initialBoardState, { type: 'loaded', projects: [], tasks: [task(1), task(2)], statuses: [] });
     state = boardReducer(state, { type: 'event', event: { type: 'task', task: task(2, 'todo') } });
     state = boardReducer(state, { type: 'event', event: { type: 'task', task: task(3) } });
     expect(state.tasks.map((t) => [t.id, t.status])).toEqual([
@@ -82,6 +86,22 @@ describe('boardReducer', () => {
     const state = boardReducer(initialBoardState, { type: 'logLoaded', taskId: 1, lines });
     expect(state.logs[1]).toHaveLength(1_000);
     expect(state.logs[1]?.[0]?.seq).toBe(201);
+  });
+
+  it('tracks why a project is waiting', () => {
+    let state = boardReducer(initialBoardState, {
+      type: 'loaded',
+      projects: [],
+      tasks: [],
+      statuses: [
+        { projectId: 1, blocked: 'Uncommitted changes: a.txt' },
+        { projectId: 2, blocked: null },
+      ],
+    });
+    expect(state.blocked).toEqual({ 1: 'Uncommitted changes: a.txt' });
+    state = boardReducer(state, { type: 'event', event: { type: 'projectStatus', projectId: 2, blocked: 'Repo is on main' } });
+    state = boardReducer(state, { type: 'event', event: { type: 'projectStatus', projectId: 1, blocked: null } });
+    expect(state.blocked).toEqual({ 2: 'Repo is on main' });
   });
 
   it('updates a run in place when it finishes', () => {

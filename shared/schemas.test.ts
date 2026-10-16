@@ -12,6 +12,7 @@ describe('project schemas', () => {
       mergeTarget: null,
       acceptCommit: true,
       acceptFollowup: 'none',
+      pushAfterMerge: false,
       defaultModel: 'sonnet',
       defaultTurnLimit: 30,
       allowedCommands: [],

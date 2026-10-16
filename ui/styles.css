@@ -160,6 +160,11 @@ textarea {
   color: var(--danger);
 }
 
+.banner--warn {
+  border-color: var(--high);
+  color: var(--text);
+}
+
 .panel {
   display: flex;
   flex-direction: column;

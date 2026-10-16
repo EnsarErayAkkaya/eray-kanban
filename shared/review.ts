@@ -17,3 +17,5 @@ export const ReviewJsonSchema = z.discriminatedUnion('outcome', [
   }),
 ]);
 export type ReviewJson = z.output<typeof ReviewJsonSchema>;
+
+export const RejectTaskInput = z.object({ feedback: z.string().trim().min(1).max(10_000) }).strict();

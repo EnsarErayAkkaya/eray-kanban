@@ -52,6 +52,19 @@ export function App() {
         </div>
       )}
 
+      {state.projects
+        .filter((p) => state.blocked[p.id] !== undefined && (projectId === null || projectId === p.id))
+        .map((p) => (
+          <div key={p.id} className="banner banner--warn" role="status">
+            <span>
+              <strong>{p.name}</strong> is waiting: {state.blocked[p.id]}
+            </span>
+            <button className="btn btn--small" onClick={() => void actions.checkProject(p.id)}>
+              Check again
+            </button>
+          </div>
+        ))}
+
       {panel === 'project' && <ProjectForm onSubmit={actions.createProject} onClose={() => setPanel('none')} />}
       {panel === 'task' && (
         <TaskForm

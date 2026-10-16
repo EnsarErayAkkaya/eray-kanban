@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { IdSchema, ModelSchema, TimestampSchema } from './common';
+import { ReviewJsonSchema } from './review';
 
 export const RUN_KINDS = ['initial', 'feedback', 'check_fix', 'answer'] as const;
 export const RUN_OUTCOMES = ['running', 'completed', 'turn_limit', 'stopped', 'timed_out', 'failed'] as const;
@@ -28,6 +29,7 @@ export const RunSchema = z.object({
   cacheReadTokens: Count.nullable(),
   costUsd: z.number().nonnegative().nullable(),
   error: z.string().nullable(),
+  review: ReviewJsonSchema.nullable(),
   startedAt: TimestampSchema,
   endedAt: TimestampSchema.nullable(),
 });

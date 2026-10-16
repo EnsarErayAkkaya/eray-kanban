@@ -6,12 +6,14 @@ import type { Task } from '@shared/task';
 import { transition } from '../domain/taskMachine';
 import { SqliteProjectRepo } from '../infra/sqlite/sqliteProjectRepo';
 import { SqliteRunRepo } from '../infra/sqlite/sqliteRunRepo';
+import { SqliteSnapshotRepo } from '../infra/sqlite/sqliteSnapshotRepo';
 import { SqliteTaskRepo } from '../infra/sqlite/sqliteTaskRepo';
 import { fakeClock, memoryDb, newTask, seedProject } from '../infra/sqlite/testDb';
 import type { AgentEvent, AgentExit, AgentPort, AgentRequest, AgentResult, Logger } from './ports';
 import { Scheduler } from './scheduler';
+import { FakeGit, SNAPSHOT } from './testFakes';
 
-// Repos run on in-memory SQLite; the agent, board events and logger are fakes.
+// Repos run on in-memory SQLite; the agent, git, board events and logger are fakes.
 type Script = (onEvent: (e: AgentEvent) => void, signal: AbortSignal) => Promise<AgentExit>;
 
 class FakeAgent implements AgentPort {
@@ -51,6 +53,9 @@ const finishWith = (exit: AgentExit): Script => async (onEvent) => {
 const waitForAbort: Script = (_onEvent, signal) =>
   new Promise((resolve) => signal.addEventListener('abort', () => resolve({ kind: 'cancelled' })));
 
+// Pickup awaits the git check, so the agent starts a few microtasks after kick().
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 describe('Scheduler', () => {
   let db: Database;
   let tasks: SqliteTaskRepo;
@@ -60,6 +65,8 @@ describe('Scheduler', () => {
   let events: BoardEvent[];
   let errors: string[];
   let sessions: number;
+  let git: FakeGit;
+  let snapshots: SqliteSnapshotRepo;
   let scheduler: Scheduler;
 
   const todo = (overrides: Parameters<typeof newTask>[1] = {}, projectId = project.id): Task =>
@@ -79,12 +86,18 @@ describe('Scheduler', () => {
     events = [];
     errors = [];
     sessions = 0;
+    git = new FakeGit();
+    snapshots = new SqliteSnapshotRepo(db, clock);
     const log: Logger = { info: () => undefined, error: (msg) => errors.push(msg) };
-    scheduler = new Scheduler(projects, tasks, runs, agent, { publish: (e) => events.push(e) }, log, {
-      promptTemplate: '# Task #{{id}}: {{title}}',
-      runTimeoutMs: 60_000,
-      newSessionId: () => `new-session-${++sessions}`,
-    });
+    scheduler = new Scheduler(
+      { projects, tasks, runs, snapshots, agent, git, events: { publish: (e) => events.push(e) }, log },
+      {
+        taskTemplate: '# Task #{{id}}: {{title}}',
+        feedbackTemplate: 'Feedback on #{{id}}: {{feedback}}',
+        runTimeoutMs: 60_000,
+        newSessionId: () => `new-session-${++sessions}`,
+      },
+    );
   });
 
   it('runs the top Todo task and sends it to review', async () => {
@@ -169,6 +182,7 @@ describe('Scheduler', () => {
     agent.script = waitForAbort;
     const task = todo();
     const worker = scheduler.kick(project.id);
+    await settle();
     expect(scheduler.stop(task.id)).toBe(true);
     await worker;
     expect(runs.listByTask(task.id)[0]?.outcome).toBe('stopped');
@@ -198,7 +212,9 @@ describe('Scheduler', () => {
     todo();
     const a = scheduler.kick(project.id);
     const b = scheduler.kick(project.id);
+    await settle();
     expect(agent.calls).toHaveLength(1);
+    expect(git.snapshotCalls).toHaveLength(1);
     scheduler.stop(task.id);
     await Promise.all([a, b]);
   });
@@ -209,6 +225,7 @@ describe('Scheduler', () => {
     const a = todo({}, project.id);
     const b = todo({}, other.id);
     const workers = scheduler.kickAll();
+    await settle();
     expect(agent.calls.map((c) => c.cwd).sort()).toEqual(['/repos/api', '/repos/web-app']);
     scheduler.stop(a.id);
     scheduler.stop(b.id);
@@ -236,5 +253,157 @@ describe('Scheduler', () => {
     await scheduler.kick(project.id);
     expect(statusOf(task.id)).toBe('cancelled');
     expect(errors).toEqual([]);
+  });
+
+  describe('pickup (invariant 4)', () => {
+    it('saves the snapshot before the agent starts', async () => {
+      const task = todo();
+      let snapshotAtStart: unknown;
+      agent.script = async () => {
+        snapshotAtStart = snapshots.get(task.id);
+        return { kind: 'result', result: result(DONE) };
+      };
+      await scheduler.kick(project.id);
+      expect(git.snapshotCalls).toEqual([['/repos/web-app', 'develop']]);
+      expect(snapshotAtStart).toEqual(SNAPSHOT);
+    });
+
+    it('waits on a dirty tree or wrong branch, tells the board why, and starts once fixed', async () => {
+      git.snapshotResult = { ok: false, reason: 'wrong_branch', detail: 'Repo is on main, expected develop' };
+      const task = todo();
+      await scheduler.kick(project.id);
+
+      expect(agent.calls).toHaveLength(0);
+      expect(statusOf(task.id)).toBe('todo');
+      expect(scheduler.statuses()).toEqual([{ projectId: project.id, blocked: 'Repo is on main, expected develop' }]);
+      expect(events).toContainEqual({ type: 'projectStatus', projectId: project.id, blocked: 'Repo is on main, expected develop' });
+
+      git.snapshotResult = { ok: true, snapshot: SNAPSHOT };
+      await scheduler.kick(project.id);
+      expect(agent.calls).toHaveLength(1);
+      expect(scheduler.statuses()).toEqual([{ projectId: project.id, blocked: null }]);
+      expect(events).toContainEqual({ type: 'projectStatus', projectId: project.id, blocked: null });
+    });
+
+    it('reports an unreadable repo as a block, not a crash', async () => {
+      git.snapshotError = new Error('not a git repository');
+      todo();
+      await scheduler.kick(project.id);
+      expect(scheduler.statuses()[0]?.blocked).toBe('Could not read the repo: not a git repository');
+      expect(errors).toEqual([]);
+    });
+
+    it('publishes a block only when it changes', async () => {
+      git.snapshotResult = { ok: false, reason: 'dirty', detail: 'Uncommitted changes: a.txt' };
+      todo();
+      await scheduler.kick(project.id);
+      await scheduler.kick(project.id);
+      expect(events.filter((e) => e.type === 'projectStatus')).toHaveLength(1);
+    });
+
+    it('does not start a task cancelled while the repo was being checked', async () => {
+      const task = todo();
+      const original = git.snapshot.bind(git);
+      git.snapshot = async (repo, branch) => {
+        tasks.applyStatusChange(transition(tasks.get(task.id) ?? task, 'cancel'));
+        return original(repo, branch);
+      };
+      await scheduler.kick(project.id);
+      expect(agent.calls).toHaveLength(0);
+      expect(statusOf(task.id)).toBe('cancelled');
+      expect(errors).toEqual([]);
+    });
+  });
+
+  describe('post-run guard', () => {
+    it('flags the task when the agent touched git, and still sends it to review', async () => {
+      git.guardProblems = ['HEAD moved from abc123 to def45678'];
+      const task = todo();
+      await scheduler.kick(project.id);
+
+      expect(tasks.get(task.id)).toMatchObject({
+        status: 'in_review',
+        gitIssue: 'guard_tripped',
+        gitIssueDetail: 'HEAD moved from abc123 to def45678',
+      });
+      expect(logTexts(task.id)).toContain('error: Git guard: HEAD moved from abc123 to def45678');
+    });
+
+    it('clears the flag when a later run leaves git alone', async () => {
+      const task = todo();
+      git.guardProblems = ['Changes were staged in the index'];
+      await scheduler.kick(project.id);
+      tasks.applyStatusChange(transition(tasks.get(task.id) ?? task, 'reject'));
+
+      git.guardProblems = [];
+      await scheduler.resumeWithFeedback(task.id, 'unstage that');
+      expect(tasks.get(task.id)).toMatchObject({ status: 'in_review', gitIssue: null, gitIssueDetail: null });
+    });
+  });
+
+  it('stores the review JSON on the run', async () => {
+    agent.script = finishWith({
+      kind: 'result',
+      result: result(fence({ outcome: 'done', summary: 'Added /settings', concerns: ['No tests for it'] })),
+    });
+    const task = todo();
+    await scheduler.kick(project.id);
+    expect(runs.listByTask(task.id)[0]?.review).toEqual({
+      outcome: 'done',
+      summary: 'Added /settings',
+      notes: [],
+      concerns: ['No tests for it'],
+    });
+  });
+
+  describe('resumeWithFeedback', () => {
+    const toReviewThenReject = async (task: Task) => {
+      await scheduler.kick(project.id);
+      tasks.applyStatusChange(transition(tasks.get(task.id) ?? task, 'reject'));
+    };
+
+    it('resumes the same session with the feedback and returns to review', async () => {
+      const task = todo();
+      await toReviewThenReject(task);
+      await scheduler.resumeWithFeedback(task.id, 'Use a toggle');
+
+      expect(agent.calls.at(-1)).toMatchObject({
+        prompt: `Feedback on #${task.id}: Use a toggle`,
+        sessionId: 'sess-1',
+        resume: true,
+      });
+      expect(runs.listByTask(task.id).map((r) => r.kind)).toEqual(['initial', 'feedback']);
+      expect(statusOf(task.id)).toBe('in_review');
+      // The snapshot from the first pickup stays; a reject takes no new one.
+      expect(git.snapshotCalls).toHaveLength(1);
+    });
+
+    it('can be rejected twice', async () => {
+      const task = todo();
+      await toReviewThenReject(task);
+      await scheduler.resumeWithFeedback(task.id, 'first');
+      tasks.applyStatusChange(transition(tasks.get(task.id) ?? task, 'reject'));
+      await scheduler.resumeWithFeedback(task.id, 'second');
+      expect(runs.listByTask(task.id).map((r) => r.kind)).toEqual(['initial', 'feedback', 'feedback']);
+      expect(statusOf(task.id)).toBe('in_review');
+    });
+
+    it('sends the task back to review when there is no session to resume', async () => {
+      const task = tasks.applyStatusChange(transition(todo(), 'start'));
+      await scheduler.resumeWithFeedback(task.id, 'x');
+      expect(agent.calls).toHaveLength(0);
+      expect(statusOf(task.id)).toBe('in_review');
+      expect(errors).toEqual([`Task ${task.id} has no session to resume`]);
+    });
+
+    it('waits for a worker that is still finishing', async () => {
+      const task = todo();
+      await toReviewThenReject(task);
+      const kick = scheduler.kick(project.id);
+      const resume = scheduler.resumeWithFeedback(task.id, 'after the kick');
+      await Promise.all([kick, resume]);
+      expect(agent.calls).toHaveLength(2);
+      expect(agent.calls.at(-1)?.resume).toBe(true);
+    });
   });
 });

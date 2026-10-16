@@ -6,6 +6,7 @@ import { SqliteProjectRepo } from '../infra/sqlite/sqliteProjectRepo';
 import { SqliteTaskRepo } from '../infra/sqlite/sqliteTaskRepo';
 import { fakeClock, memoryDb, newTask } from '../infra/sqlite/testDb';
 import { ProjectService } from './projectService';
+import { FakeScheduler } from './testFakes';
 
 const probe = { isGitRepo: (path: string) => path.startsWith('/repos/') };
 const input = (repoPath: string) => CreateProjectInput.parse({ name: 'shop', repoPath, workingBranch: 'develop' });
@@ -18,7 +19,7 @@ describe('ProjectService', () => {
     const clock = fakeClock();
     const db = memoryDb();
     tasks = new SqliteTaskRepo(db, clock);
-    service = new ProjectService(new SqliteProjectRepo(db, clock), tasks, probe);
+    service = new ProjectService(new SqliteProjectRepo(db, clock), tasks, probe, new FakeScheduler());
   });
 
   it('creates a project for a git repo', () => {

@@ -11,6 +11,7 @@ export interface BoardActions {
   sendEvent(taskId: number, event: TaskEvent): Promise<ActionResult>;
   stop(taskId: number): Promise<ActionResult>;
   loadHistory(taskId: number): Promise<ActionResult>;
+  checkProject(projectId: number): Promise<ActionResult>;
   dismissError(): void;
 }
 
@@ -22,8 +23,8 @@ export function useBoard(): { state: BoardState; actions: BoardActions } {
   useEffect(() => {
     let wasConnected = false;
     const load = () =>
-      Promise.all([api.projects(), api.tasks()])
-        .then(([projects, tasks]) => dispatch({ type: 'loaded', projects, tasks }))
+      Promise.all([api.projects(), api.tasks(), api.projectStatuses()])
+        .then(([projects, tasks, statuses]) => dispatch({ type: 'loaded', projects, tasks, statuses }))
         .catch((err: unknown) => dispatch({ type: 'error', message: `Could not load the board: ${message(err)}` }));
 
     void load();
@@ -66,6 +67,7 @@ export function useBoard(): { state: BoardState; actions: BoardActions } {
           const logs = await Promise.all(runs.map((r) => api.log(r.id)));
           dispatch({ type: 'logLoaded', taskId, lines: logs.flat() });
         }, true),
+      checkProject: (projectId) => attempt(async () => void (await api.checkProject(projectId)), true),
       dismissError: () => dispatch({ type: 'error', message: null }),
     };
   }, []);
