@@ -134,3 +134,11 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Agent Kanban runtime data
+data/
+screenshots/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
