@@ -10,6 +10,7 @@ interface RunRow {
   kind: string;
   outcome: string;
   session_id: string | null;
+  pid: number | null;
   model: string;
   turn_limit: number;
   input: string;
@@ -52,6 +53,7 @@ function fromRow(r: RunRow): Run {
     kind: r.kind,
     outcome: r.outcome,
     sessionId: r.session_id,
+    pid: r.pid,
     model: r.model,
     turnLimit: r.turn_limit,
     input: r.input,
@@ -73,10 +75,12 @@ function fromLogRow(r: LogRow): RunLogLine {
 
 export class SqliteRunRepo implements RunRepo {
   private readonly _insert: Statement<
-    [{ task_id: number; kind: string; model: string; turn_limit: number; input: string; now: string }],
+    [{ task_id: number; session_id: string; kind: string; model: string; turn_limit: number; input: string; now: string }],
     RunRow
   >;
   private readonly _setSession: Statement<[string, number]>;
+  private readonly _setPid: Statement<[number, number]>;
+  private readonly _running: Statement<[], RunRow>;
   private readonly _finish: Statement<[FinishParams]>;
   private readonly _get: Statement<[number], RunRow>;
   private readonly _byTask: Statement<[number], RunRow>;
@@ -88,10 +92,12 @@ export class SqliteRunRepo implements RunRepo {
     private readonly _clock: Clock,
   ) {
     this._insert = db.prepare(`
-      INSERT INTO runs (task_id, kind, model, turn_limit, input, started_at)
-      VALUES (@task_id, @kind, @model, @turn_limit, @input, @now)
+      INSERT INTO runs (task_id, session_id, kind, model, turn_limit, input, started_at)
+      VALUES (@task_id, @session_id, @kind, @model, @turn_limit, @input, @now)
       RETURNING *`);
     this._setSession = db.prepare('UPDATE runs SET session_id = ? WHERE id = ?');
+    this._setPid = db.prepare('UPDATE runs SET pid = ? WHERE id = ?');
+    this._running = db.prepare("SELECT * FROM runs WHERE outcome = 'running' ORDER BY id");
     this._finish = db.prepare(`
       UPDATE runs SET outcome = @outcome, num_turns = @num_turns, input_tokens = @input_tokens,
         output_tokens = @output_tokens, cache_creation_tokens = @cache_creation_tokens,
@@ -118,6 +124,7 @@ export class SqliteRunRepo implements RunRepo {
     try {
       const row = this._insert.get({
         task_id: run.taskId,
+        session_id: run.sessionId,
         kind: run.kind,
         model: run.model,
         turn_limit: run.turnLimit,
@@ -134,6 +141,14 @@ export class SqliteRunRepo implements RunRepo {
 
   setSessionId(runId: number, sessionId: string): void {
     if (this._setSession.run(sessionId, runId).changes === 0) throw new NotFoundError('run', runId);
+  }
+
+  setPid(runId: number, pid: number): void {
+    if (this._setPid.run(pid, runId).changes === 0) throw new NotFoundError('run', runId);
+  }
+
+  listRunning(): Run[] {
+    return this._running.all().map(fromRow);
   }
 
   finish(runId: number, end: RunEnd): Run {

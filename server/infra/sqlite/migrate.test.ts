@@ -28,7 +28,7 @@ afterEach(() => {
 describe('migrate', () => {
   it('applies the real migrations once', () => {
     const db = new Sqlite(':memory:');
-    expect(migrate(db, MIGRATIONS_DIR)).toEqual(['001_init.sql']);
+    expect(migrate(db, MIGRATIONS_DIR)).toEqual(['001_init.sql', '002_run_pid.sql']);
     expect(migrate(db, MIGRATIONS_DIR)).toEqual([]);
     expect(tableNames(db)).toEqual(expect.arrayContaining(['projects', 'tasks', 'runs', 'run_log', 'schema_migrations']));
   });

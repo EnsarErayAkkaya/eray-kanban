@@ -15,12 +15,12 @@ describe('SqliteRunRepo', () => {
     const project = seedProject(db, clock);
     const task = new SqliteTaskRepo(db, clock).create(newTask(project.id));
     repo = new SqliteRunRepo(db, clock);
-    run = { taskId: task.id, kind: 'initial', model: 'sonnet', turnLimit: 30, input: 'Add settings page' };
+    run = { taskId: task.id, sessionId: 'sess-a', kind: 'initial', model: 'sonnet', turnLimit: 30, input: 'Add settings page' };
   });
 
-  it('starts a run with no usage yet', () => {
+  it('starts a run with its session id and no usage yet', () => {
     const started = repo.start(run);
-    expect(started).toMatchObject({ ...run, outcome: 'running', sessionId: null, numTurns: null, endedAt: null });
+    expect(started).toMatchObject({ ...run, outcome: 'running', sessionId: 'sess-a', pid: null, numTurns: null, endedAt: null });
   });
 
   it('rejects a run for a missing task', () => {
@@ -32,6 +32,14 @@ describe('SqliteRunRepo', () => {
     repo.setSessionId(id, 'ff3c019d');
     expect(repo.get(id)?.sessionId).toBe('ff3c019d');
     expect(() => repo.setSessionId(999, 'x')).toThrow(NotFoundError);
+  });
+
+  it('records the pid and lists only running runs', () => {
+    const live = repo.start(run);
+    const ended = repo.start(run);
+    repo.setPid(live.id, 4242);
+    repo.finish(ended.id, { outcome: 'completed', usage: null, error: null });
+    expect(repo.listRunning().map((r) => [r.id, r.pid])).toEqual([[live.id, 4242]]);
   });
 
   it('finishes with usage, once', () => {

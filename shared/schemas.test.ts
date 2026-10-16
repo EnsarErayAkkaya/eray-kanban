@@ -28,6 +28,19 @@ describe('project schemas', () => {
     );
   });
 
+  it.each(['sh -c x', 'bash run.sh', 'git status', 'npm run x) Bash(*', 'npm run test && git push'])(
+    'rejects allowed command %j',
+    (cmd) => {
+      expect(CreateProjectInput.safeParse({ ...project, allowedCommands: [cmd] }).success).toBe(false);
+    },
+  );
+
+  it('accepts project script commands', () => {
+    expect(CreateProjectInput.safeParse({ ...project, allowedCommands: ['npm run test', 'npx vitest run'] }).success).toBe(
+      true,
+    );
+  });
+
   it('requires an absolute repo path', () => {
     expect(CreateProjectInput.safeParse({ ...project, repoPath: 'repos/shop' }).success).toBe(false);
   });

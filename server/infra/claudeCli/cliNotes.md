@@ -1,6 +1,7 @@
 # Claude CLI: findings from the M1 test (claude 2.1.296, 2026-10-16)
 
-## Command the AgentRunner should use
+## Command the AgentRunner uses (see `claudeArgs.ts`)
+The prompt goes in on stdin (`claude -p` with no prompt argument reads stdin). `--session-id <uuid>` sets the session ID up front; the reaper uses it to recognize our processes, because `--output-format stream-json` alone also matches the Claude desktop app's own processes. End-to-end smoke test (2026-10-16, small file task): $0.012, 2 turns.
 ```
 claude -p "<task prompt>" \
   --output-format stream-json --verbose \

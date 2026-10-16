@@ -17,6 +17,7 @@ export const RunSchema = z.object({
   kind: z.enum(RUN_KINDS),
   outcome: z.enum(RUN_OUTCOMES),
   sessionId: z.string().nullable(),
+  pid: z.number().int().positive().nullable(),
   model: ModelSchema,
   turnLimit: z.number().int().positive(),
   input: z.string(),

@@ -1,4 +1,5 @@
 import type { Model } from '@shared/common';
+import type { BoardEvent } from '@shared/events';
 import type { NewProject, Project, ProjectPatch } from '@shared/project';
 import type { LogKind, Run, RunKind, RunLogLine, RunOutcome } from '@shared/run';
 import type { Task, TaskPatch } from '@shared/task';
@@ -41,6 +42,7 @@ export interface TaskRepo {
 
 export interface NewRun {
   readonly taskId: number;
+  readonly sessionId: string;
   readonly kind: RunKind;
   readonly model: Model;
   readonly turnLimit: number;
@@ -70,10 +72,60 @@ export interface NewLogLine {
 export interface RunRepo {
   start(run: NewRun): Run;
   setSessionId(runId: number, sessionId: string): void;
+  setPid(runId: number, pid: number): void;
+  listRunning(): Run[];
   /** Only a running run can finish; a second finish fails with ConflictError. */
   finish(runId: number, end: RunEnd): Run;
   get(id: number): Run | undefined;
   listByTask(taskId: number): Run[];
   appendLog(runId: number, lines: readonly NewLogLine[]): RunLogLine[];
   logAfter(runId: number, afterSeq: number): RunLogLine[];
+}
+
+export interface AgentRequest {
+  readonly cwd: string;
+  readonly prompt: string;
+  readonly model: Model;
+  readonly maxTurns: number;
+  readonly allowedCommands: readonly string[];
+  /** Chosen before spawn so it can be stored first and later identify the process. */
+  readonly sessionId: string;
+  readonly resume: boolean;
+  readonly timeoutMs: number;
+}
+
+export interface AgentResult {
+  readonly subtype: string;
+  readonly isError: boolean;
+  readonly sessionId: string;
+  readonly text: string;
+  readonly usage: RunUsage;
+}
+
+export type AgentEvent =
+  | { readonly type: 'spawned'; readonly pid: number }
+  | { readonly type: 'session'; readonly sessionId: string }
+  | { readonly type: 'log'; readonly line: NewLogLine }
+  | { readonly type: 'result'; readonly result: AgentResult };
+
+export type AgentExit =
+  | { readonly kind: 'result'; readonly result: AgentResult }
+  | { readonly kind: 'cancelled' }
+  | { readonly kind: 'timeout' }
+  | { readonly kind: 'crashed'; readonly error: string };
+
+export interface AgentPort {
+  /** Resolves once the process and everything it spawned are gone. */
+  run(request: AgentRequest, onEvent: (event: AgentEvent) => void, signal: AbortSignal): Promise<AgentExit>;
+  /** Kills a process left by a crashed server, only if that pid still runs the given session. */
+  killOrphan(pid: number, sessionId: string): boolean;
+}
+
+export interface BoardEventSink {
+  publish(event: BoardEvent): void;
+}
+
+export interface Logger {
+  info(msg: string): void;
+  error(msg: string, err?: unknown): void;
 }

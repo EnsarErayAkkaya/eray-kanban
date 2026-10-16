@@ -11,6 +11,16 @@ const BranchSchema = z
   .regex(/^[A-Za-z0-9._/-]+$/, 'letters, digits, . _ / - only')
   .refine((s) => !s.startsWith('-') && !s.includes('..'), 'not a safe branch name');
 
+// Each entry becomes a Bash(<cmd>:*) allow rule; shells and git would reopen the bypass seen in the CLI test.
+const BLOCKED_COMMANDS = new Set(['sh', 'bash', 'zsh', 'env', 'eval', 'exec', 'xargs', 'sudo', 'git']);
+const AllowedCommandSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(/^[A-Za-z0-9 ._/:=@-]+$/, 'letters, digits, spaces and . _ / : = @ - only')
+  .refine((cmd) => !BLOCKED_COMMANDS.has(cmd.split(' ')[0] ?? ''), 'shells and git are not allowed');
+
 const fields = {
   name: z.string().trim().min(1).max(80),
   repoPath: z.string().trim().startsWith('/', 'must be an absolute path'),
@@ -22,7 +32,7 @@ const fields = {
   commitMessageFormat: z.string().trim().min(1).max(200),
   defaultModel: ModelSchema,
   defaultTurnLimit: TurnLimitSchema,
-  allowedCommands: z.array(z.string().trim().min(1).max(200)).max(50),
+  allowedCommands: z.array(AllowedCommandSchema).max(50),
 };
 
 export const ProjectSchema = z.object({
