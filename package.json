@@ -6,6 +6,9 @@
   "engines": {
     "node": ">=24"
   },
+  "allowScripts": {
+    "better-sqlite3": false
+  },
   "scripts": {
     "dev:server": "tsx watch --tsconfig tsconfig.server.json server/main.ts",
     "dev:ui": "vite",
