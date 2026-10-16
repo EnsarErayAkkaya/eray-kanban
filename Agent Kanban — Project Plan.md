@@ -1,6 +1,6 @@
 # Agent Kanban — Project Plan
 
-Oct 16, 2026 · @Master
+Oct 16, 2026 · @Master · updated Oct 17, 2026: M1 to M3 done, M4 next
 
 ## Goals and scope
 
@@ -159,20 +159,36 @@ Agents can edit files and run project commands inside their own repo, and nothin
 
 Four milestones, each usable on its own; web projects are fully covered after M3.
 
-1. **M1 — Board and one worker.** Projects and tasks in SQLite, kanban UI, one worker running the CLI headless, live log on the card.
+**Status (Oct 17, 2026):** M1, M2 and M3 are done and committed. M4 is next and not started.
+
+1. **M1 — Board and one worker.** ✅ Done. Projects and tasks in SQLite, kanban UI, one worker running the CLI headless, live log on the card.
    - Done when: a Todo task in one project runs and its log streams on the board.
-2. **M2 — Review loop and git.** Snapshot, touched files, diff, review panel, reject with resume, accept with commit / push / merge, cancel with rollback, auto next task.
+   - Checked in the browser: a task ran with the real CLI and its log streamed onto the card.
+2. **M2 — Review loop and git.** ✅ Done. Snapshot, touched files, diff, review panel, reject with resume, accept with commit / push / merge, cancel with rollback, auto next task.
    - Done when: a task can be rejected twice, accepted and pushed, and a cancelled task leaves the tree exactly as before.
-3. **M3 — Web adapter.** Check commands, auto-fix pass, dev server handling, Playwright screenshots, macOS notification on review.
+   - Checked in the browser: a task was rejected twice and accepted, and its commit reached the remote. After a cancel, every file hashed the same as before the task (119 of 119).
+3. **M3 — Web adapter.** ✅ Done. Check commands, auto-fix pass, dev server handling, Playwright screenshots, macOS notification on review.
    - Done when: a Visual task arrives in review with screenshots of its routes and green checks.
-4. **M4 — Polish and parallel projects.** All projects running at once, cost totals, templates, dependencies, Needs Input state.
+   - Checked in the browser: a Visual task reached review with green checks and screenshots at desktop and mobile size, and the dev server the board started was stopped afterwards. In a separate run, a lint failure was fixed by the automatic fix pass.
+4. **M4 — Polish and parallel projects.** ⏳ Next. All projects running at once, cost totals, templates, dependencies, Needs Input state.
    - Done when: three projects run in parallel for a day without manual git cleanup.
+   - Already in place: different projects can run in parallel, and dependencies work in the scheduler. Needs Input exists as a state but you can't answer it yet.
 5. **Later — Unity adapter.** Editor launch on demand, Unity MCP checks and captures.
+
+### Decisions made along the way
+
+These go beyond the open decisions below:
+
+- **Agent runs** use `claude -p --restricted` with the project's CLAUDE.md passed in. Bash is allowed only for listed commands, and shells and git are refused. `.env*` files can't be read or edited.
+- **Post-run guard:** after every run the board checks HEAD, the branch and the index, and flags the task if the agent changed git.
+- **Wrong branch at pickup:** the project waits and shows why; the board never runs a checkout. A guard-tripped task can still be accepted or cancelled.
+- **Merges** always use `--no-ff`. Merge conflicts and push failures show as badges on Done cards, with Retry push and Mark resolved.
+- **Screenshots** use your installed Chrome through `playwright-core`.
 
 ## Open decisions
 
-- [ ] Where the tool's repo lives
-- [ ] Stack: TypeScript + Node + SQLite suggested; confirm
-- [ ] Accept without commit: keep the project paused until I clean up (current plan), or allow the next task to start on top?
-- [ ] Screenshot widths: desktop only, or desktop + mobile
-- [ ] Should the auto check-fix pass be on by default for every project?
+- [x] Where the tool's repo lives: `~/Repos/eray-kanban`
+- [x] Stack: TypeScript, Node, Fastify, SQLite (better-sqlite3), React + Vite, Vitest
+- [x] Accept without commit: the project stays paused until you clean up. A task starts only from a fully clean tree.
+- [x] Screenshot widths: chosen per project (Desktop 1280, Tablet 768, Mobile 390); the default is desktop only
+- [x] Auto check-fix pass: on by default with a per-project toggle, and at most once per review round
