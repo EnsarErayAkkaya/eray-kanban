@@ -171,10 +171,19 @@ export function ReviewPanel({ task, project, runs, log, onReview, onStop, onClos
             <h3>Screenshots</h3>
             {shots.length === 0 ? (
               <p className="hint">
-                {task.status === 'in_progress' ? 'Taken after the run and its checks.' : 'No screenshots for this task yet.'}
+                {task.status === 'in_progress'
+                  ? task.routes.length > 0
+                    ? 'Taken after the run and its checks.'
+                    : 'Taken after the run and its checks, of the pages the agent names.'
+                  : task.routes.length > 0
+                    ? 'No screenshots for this task yet.'
+                    : 'No screenshots: the task lists no pages and the agent named none.'}
               </p>
             ) : (
-              <ScreenshotsView shots={shots} imageUrl={api.screenshotUrl} onOpen={setOpenShot} />
+              <>
+                {task.routes.length === 0 && <p className="hint">Pages chosen by the agent.</p>}
+                <ScreenshotsView shots={shots} imageUrl={api.screenshotUrl} onOpen={setOpenShot} />
+              </>
             )}
           </section>
         )}

@@ -596,13 +596,30 @@ describe('Scheduler', () => {
       expect(statusOf(task.id)).toBe('in_review');
     });
 
-    it('skips tasks that are not visual or have no routes', async () => {
+    it('skips tasks that are not visual, or visual ones where neither you nor the agent named a page', async () => {
       const plain = todo();
       await scheduler.kick(project.id);
       tasks.applyStatusChange(transition(tasks.get(plain.id) ?? plain, 'accept'));
-      todo({ visual: true, routes: [] });
+      const visual = todo({ visual: true, routes: [] });
       await scheduler.kick(project.id);
       expect(adapter.shotTargets).toEqual([]);
+      expect(logTexts(visual.id)).toContain('system: No screenshots: the task lists no routes and the agent named none');
+    });
+
+    it('screenshots the pages the agent named when the task lists none, ignoring bad ones', async () => {
+      const review = { outcome: 'done', summary: 'Restyled the settings page', routes: ['/settings', 'settings', '/settings'] };
+      agent.script = finishWith({ kind: 'result', result: result(fence(review)) });
+      const task = todo({ visual: true, routes: [] });
+      await scheduler.kick(project.id);
+      expect(adapter.shotTargets).toEqual([{ taskId: task.id, runId: runs.listByTask(task.id)[0]?.id, routes: ['/settings'] }]);
+      expect(logTexts(task.id)).toContain('error: Ignored routes from the agent: settings, /settings');
+    });
+
+    it('keeps your routes over the agent’s', async () => {
+      agent.script = finishWith({ kind: 'result', result: result(fence({ outcome: 'done', summary: 'x', routes: ['/other'] })) });
+      todo({ visual: true, routes: ['/'] });
+      await scheduler.kick(project.id);
+      expect(adapter.shotTargets[0]?.routes).toEqual(['/']);
     });
 
     it('records failed captures and still reaches review', async () => {

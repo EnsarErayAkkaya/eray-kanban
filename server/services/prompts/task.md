@@ -12,6 +12,8 @@
 ## Rules
 - Don't run git commands that change history. Git is handled for you after review.
 - If the task is ambiguous in a way that changes the result, stop and ask instead of guessing.
+{{#pickRoutes}}- This is a visual task with no pages listed. Add `"routes"` to your done JSON with up to 5 app paths your change affects, e.g. `["/settings"]`; they are screenshotted for review.
+{{/pickRoutes}}
 
 ## Finish
 End your final message with exactly one fenced json block, either:

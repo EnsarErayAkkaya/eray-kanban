@@ -10,6 +10,11 @@ export const ReviewJsonSchema = z.discriminatedUnion('outcome', [
     summary: z.string().trim().min(1).max(4_000),
     notes: Lines.default([]),
     concerns: Lines.default([]),
+    // Pages to screenshot when the task names none. Kept loose here so one bad entry cannot void the review.
+    routes: z
+      .unknown()
+      .transform((v) => (Array.isArray(v) ? v.filter((r): r is string => typeof r === 'string') : []))
+      .optional(),
   }),
   z.object({
     outcome: z.literal('needs_input'),

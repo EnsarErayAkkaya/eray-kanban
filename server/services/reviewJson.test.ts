@@ -21,6 +21,12 @@ describe('extractReviewJson', () => {
     expect(extractReviewJson(message)).toMatchObject({ ok: true, review: { outcome: 'needs_input' } });
   });
 
+  it('keeps the review when its routes are malformed, keeping only the strings', () => {
+    const parse = (routes: unknown) => extractReviewJson(JSON.stringify({ outcome: 'done', summary: 'x', routes }));
+    expect(parse(['/a', 3, null, '/b'])).toMatchObject({ ok: true, review: { routes: ['/a', '/b'] } });
+    expect(parse('/a')).toMatchObject({ ok: true, review: { routes: [] } });
+  });
+
   it('accepts a bare JSON message', () => {
     expect(extractReviewJson('{"outcome":"done","summary":"ok"}')).toMatchObject({ ok: true });
   });

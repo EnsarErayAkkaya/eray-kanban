@@ -26,6 +26,7 @@ import type {
   WorkScheduler,
 } from './ports';
 import { extractReviewJson } from './reviewJson';
+import { pickScreenshotRoutes } from './screenshotRoutes';
 import { renderAnswerPrompt, renderCheckFixPrompt, renderFeedbackPrompt, renderTaskPrompt } from './taskPrompt';
 
 export interface SchedulerDeps {
@@ -359,15 +360,25 @@ export class Scheduler implements WorkScheduler {
   }
 
   private async _takeScreenshots(project: Project, taskId: number, runId: number, signal: AbortSignal): Promise<void> {
-    const { tasks, adapters, screenshots, log } = this._deps;
+    const { tasks, runs, adapters, screenshots, log } = this._deps;
     const task = tasks.get(taskId);
-    if (!task?.visual || task.routes.length === 0 || signal.aborted) return;
-    const count = task.routes.length * project.screenshotSizes.length;
-    this._appendLog(taskId, runId, { kind: 'system', text: `Taking ${count} screenshots` });
+    if (!task?.visual || signal.aborted) return;
+    const picked = pickScreenshotRoutes(task, runs.listByTask(taskId));
+    if (picked.dropped.length > 0) {
+      this._appendLog(taskId, runId, { kind: 'error', text: `Ignored routes from the agent: ${picked.dropped.join(', ')}` });
+    }
+    if (picked.source === 'none') {
+      this._appendLog(taskId, runId, { kind: 'system', text: 'No screenshots: the task lists no routes and the agent named none' });
+      return;
+    }
+    const { routes } = picked;
+    const count = routes.length * project.screenshotSizes.length;
+    const from = picked.source === 'agent' ? ` of the pages the agent named (${routes.join(', ')})` : '';
+    this._appendLog(taskId, runId, { kind: 'system', text: `Taking ${count} screenshots${from}` });
 
     let shots: readonly Shot[];
     try {
-      shots = await adapters[project.type].screenshots(project, { taskId, runId, routes: task.routes }, signal);
+      shots = await adapters[project.type].screenshots(project, { taskId, runId, routes }, signal);
     } catch (err) {
       // Adapters report problems as shots; a throw here is a bug, so log it and still reach review.
       log.error(`Screenshots for task ${taskId} failed`, err);

@@ -152,7 +152,7 @@ export function TaskForm({ projects, tasks, defaultProjectId, onSubmit, onClose 
           <label>
             Routes, one per line
             <textarea name="routes" rows={2} placeholder={'/\n/settings'} defaultValue={template?.routes.join('\n') ?? ''} />
-            <small>Taken at the sizes in the project settings, after the checks.</small>
+            <small>Taken at the sizes in the project settings, after the checks. Leave empty to let the agent pick the pages it changed.</small>
           </label>
         </fieldset>
       </Fragment>

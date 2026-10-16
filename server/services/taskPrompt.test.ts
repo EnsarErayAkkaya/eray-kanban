@@ -42,6 +42,15 @@ describe('renderTaskPrompt', () => {
     expect(prompt).toMatch(/^# Task #42: Add settings page\n\n## Rules/);
   });
 
+  it('asks for routes only for a visual task that lists none', () => {
+    const ask = 'Add `"routes"` to your done JSON';
+    expect(renderTaskPrompt(template, { ...task, visual: true, routes: [] })).toContain(ask);
+    expect(renderTaskPrompt(template, { ...task, visual: true, routes: ['/settings'] })).not.toContain(ask);
+    expect(renderTaskPrompt(template, task)).not.toContain(ask);
+    expect(renderTaskPrompt(template, { ...task, visual: true })).toMatch(/guessing\.\n- This is a visual task[^\n]*\n\n## Finish/);
+    expect(renderTaskPrompt(template, task)).toMatch(/guessing\.\n\n## Finish/);
+  });
+
   it('does not expand placeholders written inside the task text', () => {
     const prompt = renderTaskPrompt(template, { ...task, title: 'Fix {{description}} rendering' });
     expect(prompt).toContain('# Task #42: Fix {{description}} rendering');

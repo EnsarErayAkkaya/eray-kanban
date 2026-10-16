@@ -18,6 +18,8 @@ function taskValues(task: Task): Record<string, string> {
     title: task.title,
     description: task.description.trim(),
     acceptanceCriteria: task.acceptanceCriteria.trim(),
+    // Only a visual task with no pages listed asks the agent to name them.
+    pickRoutes: task.visual && task.routes.length === 0 ? 'yes' : '',
   };
 }
 
