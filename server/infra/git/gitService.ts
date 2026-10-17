@@ -275,6 +275,11 @@ export class GitService implements GitPort {
     return problems;
   }
 
+  async listFiles(repo: string): Promise<string[]> {
+    const run = await this._git(repo, ['ls-files', '--cached', '--others', '--exclude-standard', '-z']);
+    return [...new Set(splitZ(run.stdout))].sort();
+  }
+
   private async _untracked(repo: string): Promise<string[]> {
     return splitZ((await this._git(repo, ['ls-files', '--others', '--exclude-standard', '-z'])).stdout);
   }

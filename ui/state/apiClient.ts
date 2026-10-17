@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { RunChecksSchema } from '@shared/check';
+import { ProjectFilesSchema } from '@shared/files';
 import { type BoardEvent, BoardEventSchema, ProjectStatusSchema } from '@shared/events';
 import { type CreateProjectInput, ProjectSchema, type UpdateProjectInput } from '@shared/project';
 import { type AcceptOptions, ReviewChangesSchema } from '@shared/review';
@@ -50,6 +51,7 @@ export const api = {
   projects: () => call(z.array(ProjectSchema), 'GET', '/projects'),
   projectStatuses: () => call(z.array(ProjectStatusSchema), 'GET', '/projects/status'),
   projectUsage: () => call(z.array(ProjectUsageSchema), 'GET', '/projects/usage'),
+  files: (projectId: number) => call(ProjectFilesSchema, 'GET', `/projects/${projectId}/files`),
   templates: (projectId: number) => call(z.array(TaskTemplateSchema), 'GET', `/projects/${projectId}/templates`),
   createTemplate: (projectId: number, draft: TemplateDraft) =>
     call(TaskTemplateSchema, 'POST', `/projects/${projectId}/templates`, draft),

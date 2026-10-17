@@ -1,10 +1,13 @@
-import { type FormEvent, Fragment, useState } from 'react';
+import { type FormEvent, Fragment, useMemo, useRef, useState } from 'react';
 import { MODELS } from '@shared/common';
 import type { Project } from '@shared/project';
 import { PRIORITIES, type Task } from '@shared/task';
 import { type TaskDraft, api } from '../state/apiClient';
+import { buildEntries } from '../state/fileRefs';
 import type { ActionResult } from '../state/useBoard';
 import { useVersionedLoad } from '../state/useVersionedLoad';
+import { FileExplorer } from './FileExplorer';
+import { type FieldHandle, MentionField } from './MentionField';
 
 interface Props {
   readonly projects: readonly Project[];
@@ -21,6 +24,14 @@ export function TaskForm({ projects, tasks, defaultProjectId, onSubmit, onClose 
   const [templateId, setTemplateId] = useState<number | null>(null);
   const { data: templates } = useVersionedLoad(() => api.templates(projectId), String(projectId));
   const template = templates?.find((t) => t.id === templateId);
+  const [filesVersion, setFilesVersion] = useState(0);
+  const files = useVersionedLoad(() => api.files(projectId), `${projectId}:${filesVersion}`);
+  const entries = useMemo(() => buildEntries(files.data?.files ?? []), [files.data]);
+  // The explorer adds references to the field you used last; the description until you pick another.
+  const lastField = useRef<FieldHandle | null>(null);
+  const activate = (field: FieldHandle) => {
+    lastField.current = field;
+  };
   // Done tasks are already satisfied and cancelled ones never would be.
   const candidates = tasks.filter((t) => t.projectId === projectId && t.status !== 'done' && t.status !== 'cancelled');
 
@@ -114,23 +125,52 @@ export function TaskForm({ projects, tasks, defaultProjectId, onSubmit, onClose 
             <input name="turnLimit" type="number" min={1} max={500} placeholder="default" defaultValue={template?.turnLimit ?? ''} />
           </label>
         </div>
-        <label>
-          Title
-          <input name="title" required maxLength={200} autoFocus defaultValue={template?.titlePrefix ?? ''} />
-        </label>
-        <label>
-          Description
-          <textarea name="description" rows={4} defaultValue={template?.description ?? ''} />
-        </label>
-        <label>
-          Acceptance criteria
-          <textarea
-            name="acceptanceCriteria"
-            rows={3}
-            placeholder="- One check per line"
-            defaultValue={template?.acceptanceCriteria ?? ''}
+        <MentionField
+          name="title"
+          label="Title"
+          multiline={false}
+          required
+          maxLength={200}
+          autoFocus
+          defaultValue={template?.titlePrefix ?? ''}
+          entries={entries}
+          onActivate={activate}
+        />
+        <MentionField
+          name="description"
+          label="Description"
+          multiline
+          rows={4}
+          placeholder="Type @ to reference a file or folder, or drop one here"
+          defaultValue={template?.description ?? ''}
+          entries={entries}
+          onActivate={activate}
+          registerDefault={(field) => {
+            lastField.current ??= field;
+          }}
+        />
+        <MentionField
+          name="acceptanceCriteria"
+          label="Acceptance criteria"
+          multiline
+          rows={3}
+          placeholder="- One check per line"
+          defaultValue={template?.acceptanceCriteria ?? ''}
+          entries={entries}
+          onActivate={activate}
+        />
+        <details className="panel__group explorer-group">
+          <summary>Project files</summary>
+          <p className="hint">Click a file or folder to reference it in the field you used last, or drag it into a field.</p>
+          <FileExplorer
+            entries={entries}
+            truncated={files.data?.truncated ?? false}
+            loading={files.loading}
+            error={files.error}
+            onPick={(path) => lastField.current?.insert(path)}
+            onRefresh={() => setFilesVersion((v) => v + 1)}
           />
-        </label>
+        </details>
         <label>
           Depends on
           <select name="dependsOn" defaultValue="">

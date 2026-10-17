@@ -163,4 +163,8 @@ export class FakeGit implements GitPort {
     this.calls.push(`merge ${source} into ${target}${opts.push ? ' and push' : ''}`);
     return Promise.resolve(this.mergeResult);
   }
+  files: string[] = ['README.md', 'src/app.ts'];
+  listFiles(): Promise<string[]> {
+    return Promise.resolve(this.files);
+  }
 }

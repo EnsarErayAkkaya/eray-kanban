@@ -105,7 +105,7 @@ async function main(): Promise<void> {
 
   const app = buildServer(
     {
-      projects: new ProjectService(projectRepo, taskRepo, new FsRepoProbe(), scheduler, runRepo),
+      projects: new ProjectService(projectRepo, taskRepo, new FsRepoProbe(), scheduler, runRepo, git),
       tasks: new TaskService(projectRepo, taskRepo, runRepo, scheduler, hub),
       review: new ReviewService({
         projects: projectRepo,

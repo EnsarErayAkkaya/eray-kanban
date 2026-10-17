@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CreateProjectInput } from '@shared/project';
-import { ConflictError, ValidationError } from '../domain/errors';
+import { MAX_PROJECT_FILES } from '@shared/files';
+import { ConflictError, NotFoundError, ValidationError } from '../domain/errors';
 import { transition } from '../domain/taskMachine';
 import { SqliteProjectRepo } from '../infra/sqlite/sqliteProjectRepo';
 import { SqliteTaskRepo } from '../infra/sqlite/sqliteTaskRepo';
 import { fakeClock, memoryDb, newTask } from '../infra/sqlite/testDb';
 import { ProjectService } from './projectService';
-import { FakeScheduler } from './testFakes';
+import { FakeGit, FakeScheduler } from './testFakes';
 
 const probe = { isGitRepo: (path: string) => path.startsWith('/repos/') };
 const input = (repoPath: string) => CreateProjectInput.parse({ name: 'shop', repoPath, workingBranch: 'develop' });
@@ -14,12 +15,14 @@ const input = (repoPath: string) => CreateProjectInput.parse({ name: 'shop', rep
 describe('ProjectService', () => {
   let tasks: SqliteTaskRepo;
   let service: ProjectService;
+  let git: FakeGit;
 
   beforeEach(() => {
     const clock = fakeClock();
     const db = memoryDb();
     tasks = new SqliteTaskRepo(db, clock);
-    service = new ProjectService(new SqliteProjectRepo(db, clock), tasks, probe, new FakeScheduler(), { usageByProject: () => [] });
+    git = new FakeGit();
+    service = new ProjectService(new SqliteProjectRepo(db, clock), tasks, probe, new FakeScheduler(), { usageByProject: () => [] }, git);
   });
 
   it('creates a project for a git repo', () => {
@@ -47,5 +50,15 @@ describe('ProjectService', () => {
     ['promote', 'start'].forEach((e) => tasks.applyStatusChange(transition(tasks.get(task.id) ?? task, e as 'promote')));
     expect(() => service.update(project.id, { repoPath: '/repos/moved' })).toThrow(ConflictError);
     expect(service.update(project.id, { name: 'renamed' }).name).toBe('renamed');
+  });
+
+  it('lists the repo files for @-references, capped', async () => {
+    const project = service.create(input('/repos/shop'));
+    expect(await service.files(project.id)).toEqual({ files: ['README.md', 'src/app.ts'], truncated: false });
+    git.files = Array.from({ length: MAX_PROJECT_FILES + 1 }, (_, i) => `f${i}.ts`);
+    const big = await service.files(project.id);
+    expect(big.files).toHaveLength(MAX_PROJECT_FILES);
+    expect(big.truncated).toBe(true);
+    await expect(service.files(999)).rejects.toThrow(NotFoundError);
   });
 });

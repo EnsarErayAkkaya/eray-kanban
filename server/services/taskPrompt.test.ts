@@ -47,8 +47,9 @@ describe('renderTaskPrompt', () => {
     expect(renderTaskPrompt(template, { ...task, visual: true, routes: [] })).toContain(ask);
     expect(renderTaskPrompt(template, { ...task, visual: true, routes: ['/settings'] })).not.toContain(ask);
     expect(renderTaskPrompt(template, task)).not.toContain(ask);
-    expect(renderTaskPrompt(template, { ...task, visual: true })).toMatch(/guessing\.\n- This is a visual task[^\n]*\n\n## Finish/);
-    expect(renderTaskPrompt(template, task)).toMatch(/guessing\.\n\n## Finish/);
+    expect(renderTaskPrompt(template, { ...task, visual: true })).toMatch(/its root\.\n- This is a visual task[^\n]*\n\n## Finish/);
+    expect(renderTaskPrompt(template, task)).toMatch(/its root\.\n\n## Finish/);
+    expect(renderTaskPrompt(template, task)).toContain('`@path` in this task is a file or folder in the repo');
   });
 
   it('does not expand placeholders written inside the task text', () => {

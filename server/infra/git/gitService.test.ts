@@ -99,6 +99,18 @@ describe('GitService', () => {
     });
   });
 
+  describe('listFiles', () => {
+    it('lists tracked and new files, never ignored ones', async () => {
+      const repo = makeRepo();
+      repo.write('src/new file.ts', 'x');
+      repo.remove('docs/guide.md');
+      const files = await git.listFiles(repo.dir);
+      expect(files).toEqual(expect.arrayContaining(['.gitignore', 'README.md', 'src/app.ts', 'src/new file.ts']));
+      expect(files.some((f) => f.startsWith('node_modules/') || f === '.env' || f.endsWith('.log'))).toBe(false);
+      expect(files).toEqual([...files].sort());
+    });
+  });
+
   describe('touchedFiles', () => {
     it('lists added, modified and deleted files, odd names included', async () => {
       const repo = makeRepo();

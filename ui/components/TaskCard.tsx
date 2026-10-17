@@ -3,6 +3,7 @@ import type { Run, RunLogLine } from '@shared/run';
 import type { Task } from '@shared/task';
 import type { TaskStatus } from '@shared/taskStatus';
 import { LogView } from './LogView';
+import { RefText } from './RefText';
 
 export type CardActionId = 'promote' | 'demote' | 'stop' | 'cancel' | 'open' | 'retryPush' | 'resolveIssue';
 
@@ -102,7 +103,9 @@ export function TaskCard({ task, projectName, runs, dependency, log, draggable, 
         {task.status === 'in_progress' && <span className="pulse" aria-label="Agent working" />}
         {task.status === 'cancelled' && <span className="badge badge--cancelled">cancelled</span>}
       </header>
-      <h3 className="card__title">{task.title}</h3>
+      <h3 className="card__title">
+        <RefText text={task.title} compact />
+      </h3>
       <div className="card__meta">
         {projectName && <span>{projectName}</span>}
         <span>{task.model}</span>

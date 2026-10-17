@@ -35,6 +35,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get('/api/projects', async () => projects.list());
   app.get('/api/projects/status', async () => projects.statuses());
   app.get('/api/projects/usage', async () => projects.usage());
+  app.get('/api/projects/:id/files', async (req) => projects.files(IdParams.parse(req.params).id));
   app.post('/api/projects/:id/check', async (req, reply) => {
     projects.check(IdParams.parse(req.params).id);
     reply.code(202);

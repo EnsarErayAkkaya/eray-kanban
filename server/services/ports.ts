@@ -233,6 +233,8 @@ export interface GitPort {
   commitTouched(repo: string, snapshot: RepoSnapshot, message: string): Promise<CommitResult>;
   push(repo: string, branch: string): Promise<PushResult>;
   mergeInto(repo: string, source: string, target: string, opts: { readonly push: boolean }): Promise<MergeResult>;
+  /** Tracked plus new files, minus ignored ones, sorted; names only, for @-references in tasks. */
+  listFiles(repo: string): Promise<string[]>;
 }
 
 export interface ShotTarget {

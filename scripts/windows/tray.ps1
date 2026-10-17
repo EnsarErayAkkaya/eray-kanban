@@ -109,7 +109,8 @@ $stopItem.add_Click({
   $tray.Text = 'Agent Kanban: stopping'
   try {
     $token = (Get-Content -Raw -Path (Join-Path $data 'control.token')).Trim()
-    $null = Invoke-WebRequest -UseBasicParsing -Method Post -TimeoutSec 5 -Headers @{ 'x-kanban-token' = $token } -Uri "${url}api/shutdown"
+    # A bodyless POST from PowerShell is sent as a form, which the server refuses; send empty JSON instead.
+    $null = Invoke-WebRequest -UseBasicParsing -Method Post -TimeoutSec 5 -Headers @{ 'x-kanban-token' = $token } -ContentType 'application/json' -Body '{}' -Uri "${url}api/shutdown"
   } catch {}
   # The server stops its agents first; force it only if that takes too long (invariant 9).
   if ($server) {

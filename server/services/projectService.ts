@@ -1,8 +1,9 @@
 import type { ProjectStatus } from '@shared/events';
 import type { NewProject, Project, ProjectPatch } from '@shared/project';
 import { ConflictError, NotFoundError, ValidationError } from '../domain/errors';
+import { MAX_PROJECT_FILES, type ProjectFiles } from '@shared/files';
 import type { ProjectUsage } from '@shared/run';
-import type { ProjectRepo, RepoProbe, RunRepo, TaskRepo, WorkScheduler } from './ports';
+import type { GitPort, ProjectRepo, RepoProbe, RunRepo, TaskRepo, WorkScheduler } from './ports';
 
 function devUrlKey(devUrl: string): string {
   const url = new URL(devUrl);
@@ -16,7 +17,16 @@ export class ProjectService {
     private readonly _probe: RepoProbe,
     private readonly _scheduler: WorkScheduler,
     private readonly _runs: Pick<RunRepo, 'usageByProject'>,
+    private readonly _git: Pick<GitPort, 'listFiles'>,
   ) {}
+
+  /** For @-references in the task form. */
+  async files(id: number): Promise<ProjectFiles> {
+    const project = this._projects.get(id);
+    if (!project) throw new NotFoundError('project', id);
+    const all = await this._git.listFiles(project.repoPath);
+    return { files: all.slice(0, MAX_PROJECT_FILES), truncated: all.length > MAX_PROJECT_FILES };
+  }
 
   list(): Project[] {
     return this._projects.list();

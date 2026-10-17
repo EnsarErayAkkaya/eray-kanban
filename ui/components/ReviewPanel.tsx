@@ -12,6 +12,7 @@ import { ScreenshotLightbox, ScreenshotsView } from './ScreenshotsView';
 import { ConfirmButton } from './ConfirmButton';
 import { DiffView } from './DiffView';
 import { LogView } from './LogView';
+import { RefText } from './RefText';
 
 const KIND_LABEL: Readonly<Record<Run['kind'], string>> = {
   initial: 'First run',
@@ -105,7 +106,9 @@ export function ReviewPanel({ task, project, runs, log, onReview, onStop, onClos
             <div className="drawer__meta">
               #{task.id} · {STATUS_LABEL[task.status]} · {project?.name ?? 'unknown project'}
             </div>
-            <h2>{task.title}</h2>
+            <h2>
+              <RefText text={task.title} />
+            </h2>
           </div>
           <button className="btn btn--ghost" onClick={onClose} aria-label="Close">
             ✕
@@ -117,6 +120,25 @@ export function ReviewPanel({ task, project, runs, log, onReview, onStop, onClos
             <strong>The agent changed git itself.</strong> {task.gitIssueDetail} You can still accept (keeping what it did) or
             cancel, which rolls it all back.
           </div>
+        )}
+
+        {(task.description.trim() !== '' || task.acceptanceCriteria.trim() !== '') && (
+          <section className="drawer__section drawer__task">
+            <h3>Task</h3>
+            {task.description.trim() !== '' && (
+              <p>
+                <RefText text={task.description} />
+              </p>
+            )}
+            {task.acceptanceCriteria.trim() !== '' && (
+              <>
+                <h4>Acceptance criteria</h4>
+                <p>
+                  <RefText text={task.acceptanceCriteria} />
+                </p>
+              </>
+            )}
+          </section>
         )}
 
         <section className="drawer__section">

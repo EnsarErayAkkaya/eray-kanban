@@ -51,7 +51,7 @@ describe('HTTP API', () => {
     kicked = scheduler.kicked;
     app = buildServer(
       {
-        projects: new ProjectService(projects, tasks, { isGitRepo: (p) => p.startsWith('/repos/') }, scheduler, runs),
+        projects: new ProjectService(projects, tasks, { isGitRepo: (p) => p.startsWith('/repos/') }, scheduler, runs, new FakeGit()),
         tasks: new TaskService(projects, tasks, runs, scheduler, hub),
         review: new ReviewService({
           projects,
@@ -204,6 +204,13 @@ describe('HTTP API', () => {
       expect(ok.statusCode).toBe(202);
       await new Promise((r) => setImmediate(r));
       expect(shutdowns).toBe(1);
+    });
+
+    it('lists the project files for @-references', async () => {
+      const { id: projectId } = await createProject();
+      expect((await send('GET', `/api/projects/${projectId}/files`)).json()).toEqual({ files: ['README.md', 'src/app.ts'], truncated: false });
+      expect((await send('GET', '/api/projects/999/files')).statusCode).toBe(404);
+      expect((await send('GET', '/api/projects/abc/files')).statusCode).toBe(400);
     });
 
     it('totals usage per project', async () => {
