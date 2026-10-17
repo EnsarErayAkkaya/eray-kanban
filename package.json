@@ -14,6 +14,7 @@
     "dev": "tsx scripts/dev.ts",
     "stop": "tsx scripts/stop.ts",
     "shortcut": "tsx scripts/shortcut.ts",
+    "skill": "tsx scripts/installSkill.ts",
     "dev:server": "tsx watch --tsconfig tsconfig.server.json server/main.ts",
     "dev:ui": "vite",
     "build:ui": "vite build",

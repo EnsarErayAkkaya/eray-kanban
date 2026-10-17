@@ -27,6 +27,14 @@ Double-click the icon. It builds the UI when it changed, starts the server on ht
 
 From a terminal: `npm start` runs it in that terminal, `npm start -- --background` detaches it. Set `KANBAN_OPEN=0` to skip opening the browser.
 
+## Plan with Claude Code, then send the tasks to the board
+
+```bash
+npm run skill   # once, and again after updating this repo: installs the kanban skill into ~/.claude/skills
+```
+
+Plan in a normal Claude Code session inside your project. Then ask Claude to "put these on the board", or type `/kanban`. The tasks arrive in Backlog with their acceptance criteria, file references, visual routes and dependencies; you move them to Todo. The skill needs the board running and the repo added as a project.
+
 ## Develop
 
 ```bash
