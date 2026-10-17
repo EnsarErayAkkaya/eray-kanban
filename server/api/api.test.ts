@@ -65,6 +65,7 @@ describe('HTTP API', () => {
           screenshotFiles: { read: (file) => (file === '1/1/1-root-desktop.png' ? PNG : null) },
           snapshots: snapshotRepo,
           git: new FakeGit(),
+          lessons: { append: async () => async () => {} },
           scheduler,
           events: hub,
         }),

@@ -28,6 +28,11 @@ export const MemoryEntrySchema = z.object({
 });
 export type MemoryEntry = z.output<typeof MemoryEntrySchema>;
 
+/** What an agent proposes in its review JSON; only know-how, since decisions are yours. */
+export const LessonSchema = z.object({ area: MemoryEntrySchema.shape.area.default(''), text: MemoryEntrySchema.shape.text });
+export type Lesson = z.output<typeof LessonSchema>;
+export const MAX_LESSONS = 5;
+
 export const ProjectMemorySchema = z.object({
   decisions: z.array(MemoryEntrySchema),
   knowhow: z.array(MemoryEntrySchema),

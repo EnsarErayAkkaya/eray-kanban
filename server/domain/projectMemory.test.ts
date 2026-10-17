@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MEMORY_LIMITS, type MemoryEntry } from '@shared/memory';
 import { ValidationError } from './errors';
-import { parseMemory, prepareEntries, renderMemory, sameEntries } from './projectMemory';
+import { appendLessons, parseMemory, prepareEntries, renderMemory, sameEntries } from './projectMemory';
 
 const entry = (over: Partial<MemoryEntry> = {}): MemoryEntry => ({ area: 'tests', text: 'Run vitest with --pool=forks', taskId: 12, date: '2026-10-17', ...over });
 
@@ -50,5 +50,21 @@ describe('projectMemory', () => {
     expect(sameEntries([entry()], [entry()])).toBe(true);
     expect(sameEntries([entry()], [entry({ text: 'other' })])).toBe(false);
     expect(sameEntries([entry()], [])).toBe(false);
+  });
+
+  describe('appendLessons', () => {
+    it('appends with the task id and date, skipping repeats of any case', () => {
+      const current = [entry({ text: 'Use pnpm' })];
+      const next = appendLessons(current, [{ area: '', text: 'USE PNPM' }, { area: 'db', text: 'Boot runs migrations' }], 9, '2026-11-01');
+      expect(next).toEqual([...current, { area: 'db', text: 'Boot runs migrations', taskId: 9, date: '2026-11-01' }]);
+    });
+
+    it('drops what would exceed the entry or size caps instead of throwing', () => {
+      const full = Array.from({ length: MEMORY_LIMITS.knowhow.entries }, (_, i) => entry({ text: `fact ${i}` }));
+      expect(appendLessons(full, [{ area: '', text: 'one more' }], 1, '2026-11-01')).toEqual(full);
+
+      const big = Array.from({ length: 12 }, (_, i) => entry({ text: `${i} ${'x'.repeat(480)}` }));
+      expect(appendLessons(big, [{ area: '', text: 'y'.repeat(400) }], 1, '2026-11-01')).toEqual(big);
+    });
   });
 });

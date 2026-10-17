@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LessonSchema, MAX_LESSONS } from './memory';
 import { ACCEPT_FOLLOWUPS } from './project';
 
 const Lines = z.array(z.string().trim().min(1).max(2_000)).max(30);
@@ -10,6 +11,18 @@ export const ReviewJsonSchema = z.discriminatedUnion('outcome', [
     summary: z.string().trim().min(1).max(4_000),
     notes: Lines.default([]),
     concerns: Lines.default([]),
+    // Loose like routes: one malformed lesson is dropped instead of voiding the review.
+    lessons: z
+      .unknown()
+      .transform((v) => {
+        const items = Array.isArray(v) ? v : [];
+        return items.flatMap((i) => {
+          const parsed = LessonSchema.safeParse(i);
+          return parsed.success ? [parsed.data] : [];
+        });
+      })
+      .transform((l) => l.slice(0, MAX_LESSONS))
+      .default([]),
     // Pages to screenshot when the task names none. Kept loose here so one bad entry cannot void the review.
     routes: z
       .unknown()
@@ -52,6 +65,8 @@ export const AcceptTaskInput = z
     commit: z.boolean().optional(),
     followup: z.enum(ACCEPT_FOLLOWUPS).optional(),
     pushAfterMerge: z.boolean().optional(),
+    /** Indexes of the proposed lessons to keep; left out means all of them. */
+    lessons: z.array(z.number().int().min(0)).max(MAX_LESSONS).optional(),
   })
   .strict();
 export type AcceptOptions = z.output<typeof AcceptTaskInput>;

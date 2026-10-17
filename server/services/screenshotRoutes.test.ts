@@ -6,7 +6,7 @@ import { MAX_AGENT_ROUTES, pickScreenshotRoutes } from './screenshotRoutes';
 
 const task = (routes: string[]) => ({ visual: true, routes }) as Task;
 const run = (review: ReviewJson | null) => ({ review }) as Run;
-const done = (routes: string[]): ReviewJson => ({ outcome: 'done', summary: 's', notes: [], concerns: [], routes });
+const done = (routes: string[]): ReviewJson => ({ outcome: 'done', summary: 's', notes: [], concerns: [], lessons: [], routes });
 
 describe('pickScreenshotRoutes', () => {
   it('uses your routes whatever the agent said', () => {

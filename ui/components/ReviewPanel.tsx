@@ -69,6 +69,7 @@ export function ReviewPanel({ task, project, runs, log, dependency, onReview, on
   const [commit, setCommit] = useState(project?.acceptCommit ?? true);
   const [followup, setFollowup] = useState<NonNullable<AcceptOptions['followup']>>(project?.acceptFollowup ?? 'none');
   const [pushAfterMerge, setPushAfterMerge] = useState(project?.pushAfterMerge ?? false);
+  const [skippedLessons, setSkippedLessons] = useState<ReadonlySet<number>>(new Set());
 
   useEffect(() => {
     // Escape closes the enlarged screenshot first, then the panel.
@@ -100,6 +101,17 @@ export function ReviewPanel({ task, project, runs, log, dependency, onReview, on
     e.preventDefault();
     if (await act({ kind: 'answer', answer: answerText }, false)) setAnswerText('');
   };
+
+  const lessons = review?.outcome === 'done' ? review.lessons : [];
+  const toggleLesson = (i: number) =>
+    setSkippedLessons((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(i)) next.add(i);
+      return next;
+    });
+
+  // Left out when nothing is unticked, so the server keeps all of them.
+  const acceptedLessons = skippedLessons.size === 0 ? {} : { lessons: lessons.flatMap((_, i) => (skippedLessons.has(i) ? [] : [i])) };
 
   const inReview = task.status === 'in_review';
   const started = task.status === 'in_progress' || task.status === 'needs_input' || inReview;
@@ -227,6 +239,18 @@ export function ReviewPanel({ task, project, runs, log, dependency, onReview, on
                     ))}
                   </ul>
                 )}
+                {inReview && lessons.length > 0 && (
+                  <fieldset className="drawer__lessons">
+                    <legend>Add to project know-how on accept</legend>
+                    {lessons.map((l, i) => (
+                      <label key={l.text} className="check">
+                        <input type="checkbox" checked={!skippedLessons.has(i)} onChange={() => toggleLesson(i)} />
+                        {l.area !== '' && <strong>[{l.area}] </strong>}
+                        {l.text}
+                      </label>
+                    ))}
+                  </fieldset>
+                )}
               </>
             )}
           </section>
@@ -333,7 +357,7 @@ export function ReviewPanel({ task, project, runs, log, dependency, onReview, on
                 className="btn btn--primary"
                 disabled={busy}
                 onClick={() =>
-                  void act({ kind: 'accept', options: { commit, followup: commit ? followup : 'none', pushAfterMerge } }, true)
+                  void act({ kind: 'accept', options: { commit, followup: commit ? followup : 'none', pushAfterMerge, ...acceptedLessons } }, true)
                 }
               >
                 Accept

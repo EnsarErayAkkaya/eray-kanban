@@ -1,4 +1,5 @@
 import type { RunChecks } from '@shared/check';
+import type { Lesson } from '@shared/memory';
 import type { Project } from '@shared/project';
 import type { AcceptOptions, ReviewChanges } from '@shared/review';
 import type { Screenshot } from '@shared/screenshot';
@@ -10,6 +11,7 @@ import type {
   BoardEventSink,
   CheckRepo,
   GitPort,
+  LessonStore,
   ProjectRepo,
   RunRepo,
   ScreenshotFiles,
@@ -29,6 +31,7 @@ export interface ReviewDeps {
   readonly screenshotFiles: ScreenshotFiles;
   readonly snapshots: SnapshotRepo;
   readonly git: GitPort;
+  readonly lessons: LessonStore;
   readonly scheduler: WorkScheduler;
   readonly events: BoardEventSink;
 }
@@ -112,13 +115,21 @@ export class ReviewService {
       if (!commit && followup !== 'none') throw new ValidationError('Push and merge need a commit');
       if (followup === 'merge') await this._requireMergeTarget(project);
 
-      if (commit) {
-        const snapshot = snapshots.get(taskId);
-        if (!snapshot) throw new ConflictError('This task has no snapshot to commit against; accept it without a commit');
+      const snapshot = commit ? snapshots.get(taskId) : null;
+      if (commit && !snapshot) throw new ConflictError('This task has no snapshot to commit against; accept it without a commit');
+
+      // Written before the commit so the know-how file travels in the task's own commit.
+      const lessons = this._acceptedLessons(taskId, options.lessons);
+      const undoLessons = lessons.length > 0 ? await this._deps.lessons.append(project.id, taskId, lessons) : null;
+
+      if (commit && snapshot) {
         const message = commitMessage(project.commitMessageFormat, task, this._summary(taskId));
         const result = await git.commitTouched(project.repoPath, snapshot, message);
         // The commit is the one step that may fail with the task still in review, untouched.
-        if (!result.ok) throw new ConflictError(`Commit failed: ${result.error}`);
+        if (!result.ok) {
+          await undoLessons?.();
+          throw new ConflictError(`Commit failed: ${result.error}`);
+        }
         if (result.sha !== null) tasks.setCommitSha(taskId, result.sha);
       }
       // Accepting means you saw what the agent did to git; the warning has served its purpose.
@@ -208,6 +219,12 @@ export class ReviewService {
   private _summary(taskId: number): string | null {
     const reviews = this._deps.runs.listByTask(taskId).map((r) => r.review);
     return reviews.filter((r) => r !== null && r.summary.trim() !== '').at(-1)?.summary ?? null;
+  }
+
+  private _acceptedLessons(taskId: number, keep: readonly number[] | undefined): Lesson[] {
+    const review = this._deps.runs.listByTask(taskId).map((r) => r.review).filter((r) => r !== null).at(-1);
+    if (review?.outcome !== 'done') return [];
+    return review.lessons.filter((_, i) => keep === undefined || keep.includes(i));
   }
 
   private async _exclusive(taskId: number, work: () => Promise<Task>): Promise<Task> {

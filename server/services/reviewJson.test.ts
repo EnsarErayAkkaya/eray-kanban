@@ -8,7 +8,7 @@ describe('extractReviewJson', () => {
     const message = `I added the page.\n\n${fence('{"outcome": "done", "summary": "Added /settings"}')}`;
     expect(extractReviewJson(message)).toEqual({
       ok: true,
-      review: { outcome: 'done', summary: 'Added /settings', notes: [], concerns: [] },
+      review: { outcome: 'done', summary: 'Added /settings', notes: [], concerns: [], lessons: [] },
     });
   });
 
@@ -35,5 +35,14 @@ describe('extractReviewJson', () => {
     expect(extractReviewJson('All done!')).toEqual({ ok: false, error: 'No review JSON block found' });
     expect(extractReviewJson(fence('{"outcome": "done",'))).toEqual({ ok: false, error: 'Review block is not valid JSON' });
     expect(extractReviewJson(fence('{"outcome": "done"}'))).toMatchObject({ ok: false });
+  });
+
+  it('keeps well-formed lessons and drops malformed ones', () => {
+    const json = '{"outcome":"done","summary":"s","lessons":[{"area":"db","text":"Boot runs migrations"},{"text":""},7]}';
+    expect(extractReviewJson(fence(json))).toMatchObject({ ok: true, review: { lessons: [{ area: 'db', text: 'Boot runs migrations' }] } });
+  });
+
+  it('defaults lessons to none', () => {
+    expect(extractReviewJson(fence('{"outcome":"done","summary":"s"}'))).toMatchObject({ ok: true, review: { lessons: [] } });
   });
 });

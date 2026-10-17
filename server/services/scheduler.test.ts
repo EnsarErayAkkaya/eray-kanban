@@ -454,6 +454,7 @@ describe('Scheduler', () => {
       summary: 'Added /settings',
       notes: [],
       concerns: ['No tests for it'],
+      lessons: [],
     });
   });
 

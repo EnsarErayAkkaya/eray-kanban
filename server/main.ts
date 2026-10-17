@@ -105,6 +105,7 @@ async function main(): Promise<void> {
     },
   );
 
+  const memory = new MemoryService(projectRepo, taskRepo, new FsMemoryFiles(), clock);
   const app = buildServer(
     {
       projects: new ProjectService(projectRepo, taskRepo, new FsRepoProbe(), scheduler, runRepo, git, hub),
@@ -118,11 +119,12 @@ async function main(): Promise<void> {
         screenshotFiles: new FsScreenshotFiles(SCREENSHOTS_DIR),
         snapshots: snapshotRepo,
         git,
+        lessons: memory,
         scheduler,
         events: hub,
       }),
       templates: new TemplateService(projectRepo, new SqliteTemplateRepo(db, clock)),
-      memory: new MemoryService(projectRepo, taskRepo, new FsMemoryFiles(), clock),
+      memory,
       control: { token: control.token, shutdown: () => shutdown() },
       subscribe: (listener) => hub.subscribe(listener),
       heartbeatMs: 25_000,

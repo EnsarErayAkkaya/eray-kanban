@@ -127,6 +127,7 @@ describe('ReviewJsonSchema', () => {
       summary: 'Added the page',
       notes: [],
       concerns: [],
+      lessons: [],
     });
   });
 

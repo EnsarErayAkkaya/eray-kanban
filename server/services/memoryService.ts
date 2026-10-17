@@ -1,10 +1,10 @@
-import { MEMORY_KINDS, type MemoryUpdate, type ProjectMemory } from '@shared/memory';
+import { type Lesson, MEMORY_KINDS, type MemoryUpdate, type ProjectMemory } from '@shared/memory';
 import { ConflictError, NotFoundError } from '../domain/errors';
-import { prepareEntries, sameEntries } from '../domain/projectMemory';
-import type { Clock, MemoryFiles, ProjectRepo, TaskRepo } from './ports';
+import { appendLessons, prepareEntries, sameEntries } from '../domain/projectMemory';
+import type { Clock, LessonStore, MemoryFiles, ProjectRepo, TaskRepo } from './ports';
 
 /** The project's decisions and know-how, kept in its repo and loaded into every agent run. */
-export class MemoryService {
+export class MemoryService implements LessonStore {
   constructor(
     private readonly _projects: ProjectRepo,
     private readonly _tasks: Pick<TaskRepo, 'activeTask'>,
@@ -32,6 +32,16 @@ export class MemoryService {
       if (!sameEntries(current[kind], next[kind])) await this._files.write(repo, kind, next[kind]);
     }
     return next;
+  }
+
+  // Runs while the task is still in review, so the file lands in the task's own commit.
+  async append(projectId: number, taskId: number, lessons: readonly Lesson[]): Promise<() => Promise<void>> {
+    const repo = this._repo(projectId);
+    const before = (await this._files.read(repo)).knowhow;
+    const after = appendLessons(before, lessons, taskId, this._clock().slice(0, 10));
+    if (sameEntries(before, after)) return async () => {};
+    await this._files.write(repo, 'knowhow', after);
+    return () => this._files.write(repo, 'knowhow', before);
   }
 
   private _repo(projectId: number): string {

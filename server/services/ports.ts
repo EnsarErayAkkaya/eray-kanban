@@ -4,7 +4,7 @@ import type { BoardEvent, ProjectStatus } from '@shared/events';
 import type { NewProject, PROJECT_TYPES, Project, ProjectPatch, ScreenshotSize } from '@shared/project';
 import type { Screenshot } from '@shared/screenshot';
 import type { LogKind, ProjectUsage, Run, RunKind, RunLogLine, RunOutcome } from '@shared/run';
-import type { MemoryEntry, MemoryKind, ProjectMemory } from '@shared/memory';
+import type { Lesson, MemoryEntry, MemoryKind, ProjectMemory } from '@shared/memory';
 import type { ReviewJson } from '@shared/review';
 import type { GitIssue, Task, TaskPatch } from '@shared/task';
 import type { NewTemplate, TaskTemplate, TemplatePatch } from '@shared/template';
@@ -300,6 +300,12 @@ export interface WorkScheduler {
 export interface MemoryFiles {
   read(repo: string): Promise<ProjectMemory>;
   write(repo: string, kind: MemoryKind, entries: readonly MemoryEntry[]): Promise<void>;
+}
+
+/** Puts an accepted task's lessons into the project's know-how. */
+export interface LessonStore {
+  /** Returns a function that puts memory back as it was, for a commit that then fails. */
+  append(projectId: number, taskId: number, lessons: readonly Lesson[]): Promise<() => Promise<void>>;
 }
 
 export interface RepoProbe {

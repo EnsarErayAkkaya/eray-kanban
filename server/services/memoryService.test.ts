@@ -45,4 +45,26 @@ describe('MemoryService', () => {
     await expect(update({ decisions: [], knowhow: long })).rejects.toThrow(ValidationError);
     await expect(service.get(999)).rejects.toThrow(NotFoundError);
   });
+
+  describe('append', () => {
+    const lesson = { area: 'db', text: 'Migrations run on boot' };
+
+    it('adds know-how stamped with the task and date, leaving decisions alone', async () => {
+      await service.append(project.id, 7, [lesson]);
+      expect(files.writes.map(([, kind]) => kind)).toEqual(['knowhow']);
+      expect((await service.get(project.id)).knowhow).toEqual([{ ...lesson, taskId: 7, date: expect.any(String) }]);
+    });
+
+    it('does not write when every lesson is already known', async () => {
+      await service.append(project.id, 7, [lesson]);
+      await service.append(project.id, 8, [{ area: '', text: 'migrations run on boot' }]);
+      expect(files.writes).toHaveLength(1);
+    });
+
+    it('can undo what it added', async () => {
+      const undo = await service.append(project.id, 7, [lesson]);
+      await undo();
+      expect((await service.get(project.id)).knowhow).toEqual([]);
+    });
+  });
 });

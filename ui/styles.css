@@ -667,6 +667,7 @@ input[type='radio'] {
 }
 
 .panel__group,
+.drawer__lessons,
 .drawer__followup {
   display: flex;
   flex-direction: column;
@@ -678,6 +679,7 @@ input[type='radio'] {
 }
 
 .panel__group legend,
+.drawer__lessons legend,
 .drawer__followup legend {
   font-size: 13px;
   font-weight: 600;

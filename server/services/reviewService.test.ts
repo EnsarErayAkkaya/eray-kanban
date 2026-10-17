@@ -23,6 +23,8 @@ describe('ReviewService', () => {
   let checks: SqliteCheckRepo;
   let git: FakeGit;
   let scheduler: FakeScheduler;
+  let appended: Array<[number, number, string[]]>;
+  let undone: number;
   let events: BoardEvent[];
   let service: ReviewService;
   let project: Project;
@@ -31,11 +33,11 @@ describe('ReviewService', () => {
     steps.reduce((t, e) => tasks.applyStatusChange(transition(t, e)), task);
 
   /** A task that ran once from a snapshot and now waits in review. */
-  const inReview = (summary = 'Added /settings'): Task => {
+  const inReview = (summary = 'Added /settings', lessons: Array<{ area: string; text: string }> = []): Task => {
     const task = move(tasks.create(newTask(project.id, { title: 'Add settings page' })), 'promote', 'start');
     snapshots.save(task.id, SNAPSHOT);
     const run = runs.start({ taskId: task.id, sessionId: 'sess-1', kind: 'initial', model: 'sonnet', turnLimit: 30, input: 'x' });
-    runs.setReview(run.id, { outcome: 'done', summary, notes: [], concerns: [] });
+    runs.setReview(run.id, { outcome: 'done', summary, notes: [], concerns: [], lessons });
     return move(task, 'submit');
   };
 
@@ -48,6 +50,8 @@ describe('ReviewService', () => {
     snapshots = new SqliteSnapshotRepo(db, clock);
     project = seedProject(db, clock);
     git = new FakeGit();
+    appended = [];
+    undone = 0;
     scheduler = new FakeScheduler();
     events = [];
     checks = new SqliteCheckRepo(db);
@@ -60,6 +64,14 @@ describe('ReviewService', () => {
       screenshotFiles: { read: () => null },
       snapshots,
       git,
+      lessons: {
+        append: async (projectId, taskId, lessons) => {
+          appended.push([projectId, taskId, lessons.map((l) => l.text)]);
+          return async () => {
+            undone++;
+          };
+        },
+      },
       scheduler,
       events: { publish: (e) => events.push(e) },
     });
@@ -180,6 +192,29 @@ describe('ReviewService', () => {
     it('records no sha when there was nothing left to commit', async () => {
       git.commitResult = { ok: true, sha: null, files: [] };
       expect((await service.accept(inReview().id, { commit: true })).commitSha).toBeNull();
+    });
+
+    it('adds the lessons the agent proposed before the commit, all of them unless you pick some', async () => {
+      const lessons = [{ area: 'db', text: 'Migrations run on boot' }, { area: '', text: 'Use pnpm' }];
+      const task = inReview('s', lessons);
+      await service.accept(task.id, { commit: true });
+      expect(appended).toEqual([[project.id, task.id, ['Migrations run on boot', 'Use pnpm']]]);
+
+      const picked = inReview('s', lessons);
+      appended.length = 0;
+      await service.accept(picked.id, { commit: true, lessons: [1] });
+      expect(appended[0]?.[2]).toEqual(['Use pnpm']);
+    });
+
+    it('adds nothing when you untick every lesson', async () => {
+      await service.accept(inReview('s', [{ area: '', text: 'x' }]).id, { commit: true, lessons: [] });
+      expect(appended).toEqual([]);
+    });
+
+    it('puts the know-how back when the commit fails', async () => {
+      git.commitResult = { ok: false, error: 'lint failed' };
+      await expect(service.accept(inReview('s', [{ area: '', text: 'x' }]).id, { commit: true })).rejects.toThrow('Commit failed');
+      expect(undone).toBe(1);
     });
 
     it('keeps the task in review when the commit fails', async () => {

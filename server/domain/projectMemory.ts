@@ -1,4 +1,4 @@
-import { MEMORY_LIMITS, type MemoryEntry, type MemoryEntryInput, type MemoryKind } from '@shared/memory';
+import { type Lesson, MEMORY_LIMITS, type MemoryEntry, type MemoryEntryInput, type MemoryKind } from '@shared/memory';
 import { ValidationError } from './errors';
 
 // Relative to the repo root; committed with the project like any other file.
@@ -43,6 +43,22 @@ export function prepareEntries(kind: MemoryKind, input: readonly MemoryEntryInpu
   const size = renderMemory(kind, entries).length;
   if (size > limit.chars) throw new ValidationError(`${label(kind)} is ${size} characters; the limit is ${limit.chars}`);
   return entries;
+}
+
+/** Adds lessons from a task to know-how; skips repeats and whatever would push the file past its caps. */
+export function appendLessons(current: readonly MemoryEntry[], lessons: readonly Lesson[], taskId: number, today: string): MemoryEntry[] {
+  const limit = MEMORY_LIMITS.knowhow;
+  const seen = new Set(current.map((e) => e.text.toLowerCase()));
+  const next = [...current];
+  for (const lesson of lessons) {
+    const key = lesson.text.toLowerCase();
+    if (seen.has(key) || next.length >= limit.entries) continue;
+    const candidate = [...next, { ...lesson, taskId, date: today }];
+    if (renderMemory('knowhow', candidate).length > limit.chars) continue;
+    seen.add(key);
+    next.push(candidate[candidate.length - 1] as MemoryEntry);
+  }
+  return next;
 }
 
 export function sameEntries(a: readonly MemoryEntry[], b: readonly MemoryEntry[]): boolean {
