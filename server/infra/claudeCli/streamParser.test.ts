@@ -35,7 +35,7 @@ describe('parseStreamLine on recorded CLI output', () => {
         usage: { numTurns: 7, outputTokens: 1069, cacheCreationTokens: 3344, cacheReadTokens: 26380, costUsd: 0.02672 },
       },
     });
-    expect(logs(events).at(-1)).toBe('system: Finished: success, 7 turns, $0.0267');
+    expect(logs(events).at(-1)).toBe('system: Finished: success, 7 turns, $0.0267 (cache write 3344, read 26380)');
   });
 
   it('still finds the result when other events follow it', () => {

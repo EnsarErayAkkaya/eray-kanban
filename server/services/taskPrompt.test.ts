@@ -52,6 +52,14 @@ describe('renderTaskPrompt', () => {
     expect(renderTaskPrompt(template, task)).toContain('`@path` in this task is a file or folder in the repo');
   });
 
+  it('lists the allowed shell commands only when the project has some', () => {
+    const prompt = renderTaskPrompt(template, task, ['npm run typecheck', 'npm run lint']);
+    expect(prompt).toContain('Shell commands you may run: `npm run typecheck`, `npm run lint`.');
+    expect(prompt).not.toMatch(/\{\{/);
+    expect(renderTaskPrompt(template, task)).not.toContain('Shell commands you may run');
+    expect(renderTaskPrompt(template, task, ['npm run typecheck']).length).toBeLessThan(1_200);
+  });
+
   it('does not expand placeholders written inside the task text', () => {
     const prompt = renderTaskPrompt(template, { ...task, title: 'Fix {{description}} rendering' });
     expect(prompt).toContain('# Task #42: Fix {{description}} rendering');

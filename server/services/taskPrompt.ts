@@ -23,8 +23,10 @@ function taskValues(task: Task): Record<string, string> {
   };
 }
 
-export function renderTaskPrompt(template: string, task: Task): string {
-  return renderPrompt(template, taskValues(task));
+// The agent can't see its allow-list, so without this it guesses (`npx tsc`), is denied and skips verifying.
+export function renderTaskPrompt(template: string, task: Task, allowedCommands: readonly string[] = []): string {
+  const commands = allowedCommands.map((c) => `\`${c}\``).join(', ');
+  return renderPrompt(template, { ...taskValues(task), commands });
 }
 
 export function renderFeedbackPrompt(template: string, task: Task, feedback: string): string {

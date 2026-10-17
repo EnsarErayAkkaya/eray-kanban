@@ -97,7 +97,7 @@ export function parseStreamLine(line: string, cwd: string): AgentEvent[] {
   if (init.success) {
     return [
       { type: 'session', sessionId: init.data.session_id },
-      { type: 'log', line: { kind: 'system', text: `Session started (${init.data.model ?? 'unknown model'})` } },
+      { type: 'log', line: { kind: 'system', text: `Session started (${init.data.model ?? 'unknown model'}, ${init.data.session_id.slice(0, 8)})` } },
     ];
   }
 
@@ -124,7 +124,10 @@ export function parseStreamLine(line: string, cwd: string): AgentEvent[] {
       },
       {
         type: 'log',
-        line: { kind: 'system', text: `Finished: ${r.subtype}, ${r.num_turns} turns, $${r.total_cost_usd.toFixed(4)}` },
+        line: {
+          kind: 'system',
+          text: `Finished: ${r.subtype}, ${r.num_turns} turns, $${r.total_cost_usd.toFixed(4)} (cache write ${r.usage.cache_creation_input_tokens}, read ${r.usage.cache_read_input_tokens})`,
+        },
       },
     ];
   }

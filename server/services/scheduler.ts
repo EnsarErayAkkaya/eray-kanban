@@ -211,7 +211,7 @@ export class Scheduler implements WorkScheduler {
       throw err;
     }
     snapshots.save(task.id, result.snapshot);
-    const prompt = renderTaskPrompt(this._options.taskTemplate, task);
+    const prompt = renderTaskPrompt(this._options.taskTemplate, task, project.allowedCommands);
     await this._pipeline(project, task, { kind: 'initial', input: prompt, session: { id: this._options.newSessionId(), resume: false } });
   }
 
