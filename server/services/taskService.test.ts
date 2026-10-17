@@ -6,14 +6,16 @@ import { ConflictError, NotFoundError, ValidationError } from '../domain/errors'
 import { IllegalTransitionError, transition } from '../domain/taskMachine';
 import { SqliteProjectRepo } from '../infra/sqlite/sqliteProjectRepo';
 import { SqliteRunRepo } from '../infra/sqlite/sqliteRunRepo';
+import { SqliteSnapshotRepo } from '../infra/sqlite/sqliteSnapshotRepo';
 import { SqliteTaskRepo } from '../infra/sqlite/sqliteTaskRepo';
 import { fakeClock, memoryDb, seedProject } from '../infra/sqlite/testDb';
 import { TaskService } from './taskService';
-import { FakeScheduler } from './testFakes';
+import { FakeScheduler, SNAPSHOT } from './testFakes';
 
 describe('TaskService', () => {
   let tasks: SqliteTaskRepo;
   let runs: SqliteRunRepo;
+  let snapshots: SqliteSnapshotRepo;
   let project: Project;
   let other: Project;
   let scheduler: FakeScheduler;
@@ -35,7 +37,8 @@ describe('TaskService', () => {
     other = seedProject(db, clock, 'api');
     scheduler = new FakeScheduler();
     events = [];
-    service = new TaskService(projects, tasks, runs, scheduler, { publish: (e) => events.push(e) });
+    snapshots = new SqliteSnapshotRepo(db, clock);
+    service = new TaskService(projects, tasks, runs, snapshots, scheduler, { publish: (e) => events.push(e) });
   });
 
   describe('create', () => {
@@ -100,7 +103,7 @@ describe('TaskService', () => {
       expect(scheduler.kicked).toEqual([]);
     });
 
-    it.each(['start', 'submit', 'reject', 'askInput', 'answer', 'accept', 'cancel'] as const)(
+    it.each(['start', 'submit', 'reject', 'askInput', 'answer', 'accept', 'cancel', 'reopen'] as const)(
       'refuses %s, which has its own path',
       (event) => {
         expect(() => service.applyBoardEvent(create().id, event)).toThrow(ConflictError);
@@ -109,6 +112,90 @@ describe('TaskService', () => {
 
     it('lets the state machine reject an illegal move', () => {
       expect(() => service.applyBoardEvent(create().id, 'demote')).toThrow(IllegalTransitionError);
+    });
+  });
+
+  describe('reopen', () => {
+    it('moves a cancelled task back to Backlog with its edits and publishes it', () => {
+      const task = force(create(), 'cancel');
+      const reopened = service.reopen(task.id, { title: 'Second try', priority: 'high' });
+      expect(reopened).toMatchObject({ status: 'backlog', title: 'Second try', priority: 'high' });
+      expect(events.at(-1)).toEqual({ type: 'task', task: reopened });
+    });
+
+    it('drops the snapshot of the cancelled attempt so the next pickup takes a fresh one', () => {
+      const task = force(create(), 'promote', 'start');
+      snapshots.save(task.id, SNAPSHOT);
+      force(task, 'cancel');
+      service.reopen(task.id, {});
+      expect(snapshots.get(task.id)).toBeUndefined();
+      expect(() => snapshots.save(task.id, { ...SNAPSHOT, head: 'def456' })).not.toThrow();
+    });
+
+    it('keeps the runs of the cancelled attempt', () => {
+      const task = create();
+      runs.start({ taskId: task.id, sessionId: 's', kind: 'initial', model: 'opus', turnLimit: 12, input: 'x' });
+      service.reopen(force(task, 'cancel').id, {});
+      expect(service.runs(task.id)).toHaveLength(1);
+    });
+
+    it.each(['backlog', 'todo', 'in_progress', 'done'] as const)('refuses a task in %s', (status) => {
+      const steps = { backlog: [], todo: ['promote'], in_progress: ['promote', 'start'], done: ['promote', 'start', 'submit', 'accept'] } as const;
+      const task = force(create(), ...steps[status]);
+      expect(() => service.reopen(task.id, {})).toThrow(IllegalTransitionError);
+    });
+
+    it('checks the new dependency before moving anything', () => {
+      const task = force(create(), 'cancel');
+      expect(() => service.reopen(task.id, { dependsOn: task.id })).toThrow(ValidationError);
+      expect(tasks.get(task.id)?.status).toBe('cancelled');
+    });
+  });
+
+  describe('delete', () => {
+    it.each([
+      ['backlog', []],
+      ['cancelled', ['cancel']],
+    ] as const)('deletes a %s task and publishes the removal', (_status, steps) => {
+      const task = force(create(), ...steps);
+      service.delete(task.id);
+      expect(tasks.get(task.id)).toBeUndefined();
+      expect(service.list()).toEqual([]);
+      expect(events.at(-1)).toEqual({ type: 'taskDeleted', taskId: task.id });
+    });
+
+    it.each([
+      ['todo', ['promote']],
+      ['in_progress', ['promote', 'start']],
+      ['in_review', ['promote', 'start', 'submit']],
+      ['done', ['promote', 'start', 'submit', 'accept']],
+    ] as const)('refuses a task in %s', (_status, steps) => {
+      const task = force(create(), ...steps);
+      expect(() => service.delete(task.id)).toThrow(ConflictError);
+      expect(tasks.get(task.id)).toBeDefined();
+    });
+
+    it('frees its dependents and wakes the project when one is waiting in Todo', () => {
+      const dep = create();
+      const waiting = force(create({ dependsOn: dep.id }), 'promote');
+      service.delete(dep.id);
+      expect(tasks.get(waiting.id)?.dependsOn).toBeNull();
+      expect(events).toContainEqual({ type: 'task', task: tasks.get(waiting.id) });
+      expect(scheduler.kicked).toEqual([project.id]);
+    });
+
+    it('keeps the runs so the cost totals still count them', () => {
+      const task = create();
+      const run = runs.start({ taskId: task.id, sessionId: 's', kind: 'initial', model: 'opus', turnLimit: 12, input: 'x' });
+      service.delete(force(task, 'cancel').id);
+      expect(runs.get(run.id)).toBeDefined();
+      expect(runs.usageByProject()).toEqual([expect.objectContaining({ projectId: project.id, runs: 1 })]);
+    });
+
+    it('refuses an unknown or already deleted task', () => {
+      const task = create();
+      service.delete(task.id);
+      expect(() => service.delete(task.id)).toThrow(NotFoundError);
     });
   });
 

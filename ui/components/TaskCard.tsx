@@ -17,14 +17,8 @@ const DETAILS: CardAction = { label: 'Details', id: 'open' };
 
 // Review decisions and rollback live in the review panel, so each has one place and one confirm.
 const ACTIONS: Readonly<Record<TaskStatus, readonly CardAction[]>> = {
-  backlog: [
-    { label: 'To Todo', id: 'promote' },
-    { label: 'Cancel', id: 'cancel', tone: 'danger' },
-  ],
-  todo: [
-    { label: 'To Backlog', id: 'demote' },
-    { label: 'Cancel', id: 'cancel', tone: 'danger' },
-  ],
+  backlog: [{ label: 'To Todo', id: 'promote' }, DETAILS, { label: 'Cancel', id: 'cancel', tone: 'danger' }],
+  todo: [{ label: 'To Backlog', id: 'demote' }, DETAILS, { label: 'Cancel', id: 'cancel', tone: 'danger' }],
   in_progress: [{ label: 'Stop', id: 'stop' }, DETAILS],
   needs_input: [DETAILS],
   in_review: [{ label: 'Review', id: 'open', tone: 'primary' }],
@@ -96,6 +90,11 @@ export function TaskCard({ task, projectName, runs, dependency, log, draggable, 
         onDragStart(task);
       }}
       onDragEnd={onDragEnd}
+      onClick={(e) => {
+        // The buttons and the log keep their own clicks.
+        if (e.target instanceof Element && e.target.closest('button, a, .log')) return;
+        onAction(task, 'open');
+      }}
     >
       <header className="card__head">
         <span className="card__id">#{task.id}</span>

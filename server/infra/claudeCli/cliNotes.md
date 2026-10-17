@@ -40,3 +40,7 @@ Blocked: `git add x`, `git commit -m`, `cd . && git commit`, and writes to `.git
 - `result`: `subtype` ("success" | error subtypes), `is_error`, `num_turns`, `session_id`, `total_cost_usd`, `usage` (input / output / cache_creation / cache_read tokens), `permission_denials`, `result` (final text), `terminal_reason`.
 - `system/task_summary` can arrive **after** `result`, so don't treat `result` as the last line.
 - Ignore event types the runner doesn't know (hook_*, commands_changed, rate_limit_event, post_turn_summary).
+
+## System prompt and memory files (tested 2026-10-17, claude 2.1.296)
+- `--append-system-prompt-file` given twice keeps **only the last file**. `systemPrompt.ts` therefore joins CLAUDE.md and the `.kanban/` memory files into one temp file per run. Without memory it passes CLAUDE.md itself.
+- `--disallowedTools 'Edit(**/.kanban/**)' 'Write(**/.kanban/**)'` denies creating and editing `.kanban/*.md` at the repo root. Writes elsewhere still work.

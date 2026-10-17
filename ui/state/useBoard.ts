@@ -2,7 +2,7 @@ import { useEffect, useMemo, useReducer } from 'react';
 import type { AcceptOptions } from '@shared/review';
 import type { Task } from '@shared/task';
 import type { TaskEvent } from '@shared/taskStatus';
-import { type ProjectDraft, type ProjectPatchDraft, type TaskDraft, api, openBoardStream } from './apiClient';
+import { type ProjectDraft, type ProjectPatchDraft, type TaskDraft, type TaskPatchDraft, api, openBoardStream } from './apiClient';
 import { type BoardState, boardReducer, initialBoardState } from './boardState';
 
 export type ActionResult = { readonly ok: true } | { readonly ok: false; readonly error: string };
@@ -36,6 +36,9 @@ export interface BoardActions {
   createProject(draft: ProjectDraft): Promise<ActionResult>;
   updateProject(projectId: number, patch: ProjectPatchDraft): Promise<ActionResult>;
   createTask(draft: TaskDraft): Promise<ActionResult>;
+  /** Saves the form over the task; a cancelled one also goes back to Backlog. */
+  editTask(task: Task, draft: TaskDraft): Promise<ActionResult>;
+  deleteTask(taskId: number): Promise<ActionResult>;
   sendEvent(taskId: number, event: TaskEvent): Promise<ActionResult>;
   stop(taskId: number): Promise<ActionResult>;
   /** inline: the caller shows the error itself instead of the board banner. */
@@ -43,6 +46,12 @@ export interface BoardActions {
   loadHistory(taskId: number): Promise<ActionResult>;
   checkProject(projectId: number): Promise<ActionResult>;
   dismissError(): void;
+}
+
+// A task never moves to another project.
+function toPatch(draft: TaskDraft): TaskPatchDraft {
+  const { title, description, acceptanceCriteria, priority, visual, routes, model, turnLimit, dependsOn } = draft;
+  return { title, description, acceptanceCriteria, priority, visual, routes, model, turnLimit, dependsOn };
 }
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -103,6 +112,16 @@ export function useBoard(): { state: BoardState; actions: BoardActions } {
         attempt(async () => dispatch({ type: 'projectSaved', project: await api.updateProject(projectId, patch) }), false),
       createTask: (draft) =>
         attempt(async () => dispatch({ type: 'event', event: { type: 'task', task: await api.createTask(draft) } }), false),
+      editTask: (task, draft) =>
+        attempt(async () => {
+          const save = task.status === 'cancelled' ? api.reopenTask : api.updateTask;
+          dispatch({ type: 'event', event: { type: 'task', task: await save(task.id, toPatch(draft)) } });
+        }, false),
+      deleteTask: (taskId) =>
+        attempt(async () => {
+          await api.deleteTask(taskId);
+          dispatch({ type: 'event', event: { type: 'taskDeleted', taskId } });
+        }, false),
       sendEvent: (taskId, event) =>
         attempt(async () => dispatch({ type: 'event', event: { type: 'task', task: await api.sendEvent(taskId, event) } }), true),
       stop: (taskId) => attempt(async () => void (await api.stop(taskId)), true),

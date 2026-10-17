@@ -18,6 +18,7 @@ const Paths = z.array(z.string());
 export class SqliteSnapshotRepo implements SnapshotRepo {
   private readonly _insert: Statement<[SnapshotRow]>;
   private readonly _get: Statement<[number], SnapshotRow>;
+  private readonly _delete: Statement<[number]>;
 
   constructor(
     db: Database,
@@ -27,6 +28,7 @@ export class SqliteSnapshotRepo implements SnapshotRepo {
       INSERT INTO snapshots (task_id, branch, head, untracked, empty_dirs, created_at)
       VALUES (@task_id, @branch, @head, @untracked, @empty_dirs, @created_at)`);
     this._get = db.prepare('SELECT * FROM snapshots WHERE task_id = ?');
+    this._delete = db.prepare('DELETE FROM snapshots WHERE task_id = ?');
   }
 
   save(taskId: number, snapshot: RepoSnapshot): void {
@@ -45,6 +47,10 @@ export class SqliteSnapshotRepo implements SnapshotRepo {
       if (code === 'SQLITE_CONSTRAINT_FOREIGNKEY') throw new NotFoundError('task', taskId);
       throw err;
     }
+  }
+
+  delete(taskId: number): void {
+    this._delete.run(taskId);
   }
 
   get(taskId: number): RepoSnapshot | undefined {

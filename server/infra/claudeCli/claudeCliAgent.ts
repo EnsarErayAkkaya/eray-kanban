@@ -1,9 +1,9 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import os from 'node:os';
 import type { AgentEvent, AgentExit, AgentPort, AgentRequest, AgentResult } from '../../services/ports';
 import type { ProcessSupervisor } from '../process/processSupervisor';
 import { buildClaudeArgs } from './claudeArgs';
 import { parseStreamLine } from './streamParser';
+import { type SystemPrompt, prepareSystemPrompt } from './systemPrompt';
 
 export interface ClaudeCommand {
   readonly bin: string;
@@ -23,28 +23,36 @@ export class ClaudeCliAgent implements AgentPort {
     private readonly _supervisor: ProcessSupervisor,
     private readonly _command: ClaudeCommand = { bin: 'claude', prefixArgs: [] },
     private readonly _env: NodeJS.ProcessEnv = process.env,
+    private readonly _tmpDir: string = os.tmpdir(),
   ) {}
 
   async run(req: AgentRequest, onEvent: (event: AgentEvent) => void, signal: AbortSignal): Promise<AgentExit> {
     const seen: { result?: AgentResult } = {};
-    const hasClaudeMd = fs.existsSync(path.join(req.cwd, 'CLAUDE.md'));
+    let systemPrompt: SystemPrompt;
+    try {
+      systemPrompt = await prepareSystemPrompt(req.cwd, req.sessionId, this._tmpDir);
+    } catch (err) {
+      return { kind: 'crashed', error: `Could not read CLAUDE.md or .kanban/: ${err instanceof Error ? err.message : String(err)}` };
+    }
 
-    const exit = await this._supervisor.run({
-      command: this._command.bin,
-      args: [...this._command.prefixArgs, ...buildClaudeArgs(req, { hasClaudeMd })],
-      cwd: req.cwd,
-      env: agentEnv(this._env),
-      stdin: req.prompt,
-      timeoutMs: req.timeoutMs,
-      signal,
-      onSpawn: (pid) => onEvent({ type: 'spawned', pid }),
-      onStdoutLine: (line) => {
-        for (const event of parseStreamLine(line, req.cwd)) {
-          if (event.type === 'result') seen.result = event.result;
-          onEvent(event);
-        }
-      },
-    });
+    const exit = await this._supervisor
+      .run({
+        command: this._command.bin,
+        args: [...this._command.prefixArgs, ...buildClaudeArgs(req, { systemPromptFile: systemPrompt.file })],
+        cwd: req.cwd,
+        env: agentEnv(this._env),
+        stdin: req.prompt,
+        timeoutMs: req.timeoutMs,
+        signal,
+        onSpawn: (pid) => onEvent({ type: 'spawned', pid }),
+        onStdoutLine: (line) => {
+          for (const event of parseStreamLine(line, req.cwd)) {
+            if (event.type === 'result') seen.result = event.result;
+            onEvent(event);
+          }
+        },
+      })
+      .finally(() => systemPrompt.dispose());
 
     // A result event means the work finished, even if the process was killed while lingering after it.
     if (seen.result) return { kind: 'result', result: seen.result };

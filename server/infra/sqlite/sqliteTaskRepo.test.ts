@@ -111,6 +111,32 @@ describe('SqliteTaskRepo', () => {
     });
   });
 
+  describe('delete', () => {
+    it('hides the task from get, list and nextTodo but keeps the row', () => {
+      const task = repo.create(newTask(projectId));
+      repo.delete(task.id);
+      expect(repo.get(task.id)).toBeUndefined();
+      expect(repo.list()).toEqual([]);
+      expect(repo.nextTodo(projectId)).toBeUndefined();
+      expect(db.prepare('SELECT deleted_at FROM tasks WHERE id = ?').get(task.id)).toEqual({ deleted_at: expect.any(String) });
+    });
+
+    it('clears the dependency of the tasks that waited for it and returns them', () => {
+      const dep = repo.create(newTask(projectId, { title: 'dep' }));
+      const waiting = move(repo.create(newTask(projectId, { title: 'waiting', dependsOn: dep.id })), 'promote');
+      const freed = repo.delete(dep.id);
+      expect(freed.map((t) => [t.id, t.dependsOn])).toEqual([[waiting.id, null]]);
+      expect(repo.nextTodo(projectId)?.id).toBe(waiting.id);
+    });
+
+    it('fails for a missing or already deleted task', () => {
+      const task = repo.create(newTask(projectId));
+      repo.delete(task.id);
+      expect(() => repo.delete(task.id)).toThrow(NotFoundError);
+      expect(() => repo.delete(999)).toThrow(NotFoundError);
+    });
+  });
+
   it('sets and clears a git issue without touching the status', () => {
     const task = repo.create(newTask(projectId));
     expect(task).toMatchObject({ gitIssue: null, gitIssueDetail: null, pendingPush: null, commitSha: null });

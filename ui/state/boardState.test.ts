@@ -69,6 +69,12 @@ describe('boardReducer', () => {
     ]);
   });
 
+  it('drops a deleted task', () => {
+    let state = boardReducer(initialBoardState, { type: 'loaded', projects: [], tasks: [task(1), task(2)], statuses: [] });
+    state = boardReducer(state, { type: 'event', event: { type: 'taskDeleted', taskId: 1 } });
+    expect(state.tasks.map((t) => t.id)).toEqual([2]);
+  });
+
   it('ignores a task update older than the one it already has', () => {
     const started = { ...task(1, 'in_progress'), updatedAt: '2026-10-16T09:00:02.000Z' };
     const staleReply = { ...task(1, 'todo'), updatedAt: '2026-10-16T09:00:01.000Z' };

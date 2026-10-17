@@ -8,6 +8,7 @@ import { ReviewPanel } from './ReviewPanel';
 import { Sheet } from './Sheet';
 import type { CardActionId } from './TaskCard';
 import { TaskForm } from './TaskForm';
+import { MemoryEditor } from './MemoryEditor';
 import { TemplatesEditor } from './TemplatesEditor';
 import { UsageSummary } from './UsageSummary';
 
@@ -18,12 +19,15 @@ export function App() {
   const [projectId, setProjectId] = useState<number | null>(null);
   const [panel, setPanel] = useState<Panel>('none');
   const [openTaskId, setOpenTaskId] = useState<number | null>(null);
+  const [editTaskId, setEditTaskId] = useState<number | null>(null);
 
   const visibleTasks = projectId === null ? state.tasks : state.tasks.filter((t) => t.projectId === projectId);
   // Settings act on the filtered project, or on the only one there is.
   const settingsProject = state.projects.find((p) => p.id === projectId) ?? (state.projects.length === 1 ? state.projects[0] : undefined);
   const openTask = state.tasks.find((t) => t.id === openTaskId);
+  const editTask = state.tasks.find((t) => t.id === editTaskId);
   const closeReview = useCallback(() => setOpenTaskId(null), []);
+  const closeEdit = useCallback(() => setEditTaskId(null), []);
   const closePanel = useCallback(() => setPanel('none'), []);
 
   const openReview = (task: Task) => {
@@ -120,6 +124,7 @@ export function App() {
             onClose={closePanel}
           />
           <TemplatesEditor key={`templates-${settingsProject.id}`} projectId={settingsProject.id} />
+          <MemoryEditor key={`memory-${settingsProject.id}`} projectId={settingsProject.id} />
         </Sheet>
       )}
       {panel === 'task' && (
@@ -130,6 +135,20 @@ export function App() {
             defaultProjectId={projectId}
             onSubmit={actions.createTask}
             onClose={closePanel}
+          />
+        </Sheet>
+      )}
+
+      {editTask && (
+        <Sheet label={`Edit task ${editTask.id}`} onClose={closeEdit}>
+          <TaskForm
+            key={editTask.id}
+            projects={state.projects}
+            tasks={state.tasks}
+            defaultProjectId={editTask.projectId}
+            task={editTask}
+            onSubmit={(draft) => actions.editTask(editTask, draft)}
+            onClose={closeEdit}
           />
         </Sheet>
       )}
@@ -161,8 +180,14 @@ export function App() {
           project={state.projects.find((p) => p.id === openTask.projectId)}
           runs={state.runs[openTask.id] ?? []}
           log={state.logs[openTask.id] ?? []}
+          dependency={state.tasks.find((t) => t.id === openTask.dependsOn) ?? null}
           onReview={(action) => actions.review(openTask.id, action, true)}
           onStop={() => void actions.stop(openTask.id)}
+          onEdit={() => {
+            setOpenTaskId(null);
+            setEditTaskId(openTask.id);
+          }}
+          onDelete={() => actions.deleteTask(openTask.id)}
           onClose={closeReview}
         />
       )}

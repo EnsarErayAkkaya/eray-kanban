@@ -2,19 +2,22 @@ import { z } from 'zod';
 import { RunChecksSchema } from '@shared/check';
 import { ProjectFilesSchema } from '@shared/files';
 import { type BoardEvent, BoardEventSchema, ProjectStatusSchema } from '@shared/events';
+import { ProjectMemorySchema, type UpdateMemoryInput } from '@shared/memory';
 import { type CreateProjectInput, ProjectSchema, type UpdateProjectInput } from '@shared/project';
 import { type AcceptOptions, ReviewChangesSchema } from '@shared/review';
 import { ProjectUsageSchema, RunLogLineSchema, RunSchema } from '@shared/run';
 import { ScreenshotSchema } from '@shared/screenshot';
-import { type CreateTaskInput, TaskSchema } from '@shared/task';
+import { type CreateTaskInput, TaskSchema, type UpdateTaskInput } from '@shared/task';
 import { type CreateTemplateInput, TaskTemplateSchema, type UpdateTemplateInput } from '@shared/template';
 import type { TaskEvent } from '@shared/taskStatus';
 
 export type ProjectDraft = z.input<typeof CreateProjectInput>;
 export type ProjectPatchDraft = z.input<typeof UpdateProjectInput>;
 export type TaskDraft = z.input<typeof CreateTaskInput>;
+export type TaskPatchDraft = z.input<typeof UpdateTaskInput>;
 export type TemplateDraft = z.input<typeof CreateTemplateInput>;
 export type TemplatePatchDraft = z.input<typeof UpdateTemplateInput>;
+export type MemoryDraft = z.input<typeof UpdateMemoryInput>;
 
 export class ApiError extends Error {
   constructor(
@@ -38,7 +41,7 @@ function describeError(body: unknown, status: number): string {
   return issues?.length ? issues.join('; ') : parsed.data.error;
 }
 
-async function call<T>(schema: z.ZodType<T>, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
+async function call<T>(schema: z.ZodType<T>, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
   const init: RequestInit =
     body === undefined ? { method } : { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) };
   const res = await fetch(`/api${path}`, init);
@@ -57,6 +60,8 @@ export const api = {
     call(TaskTemplateSchema, 'POST', `/projects/${projectId}/templates`, draft),
   updateTemplate: (id: number, patch: TemplatePatchDraft) => call(TaskTemplateSchema, 'PATCH', `/templates/${id}`, patch),
   deleteTemplate: (id: number) => call(z.null(), 'DELETE', `/templates/${id}`),
+  memory: (projectId: number) => call(ProjectMemorySchema, 'GET', `/projects/${projectId}/memory`),
+  saveMemory: (projectId: number, draft: MemoryDraft) => call(ProjectMemorySchema, 'PUT', `/projects/${projectId}/memory`, draft),
   checkProject: (projectId: number) => call(z.object({ checking: z.boolean() }), 'POST', `/projects/${projectId}/check`),
   reject: (taskId: number, feedback: string) => call(TaskSchema, 'POST', `/tasks/${taskId}/reject`, { feedback }),
   answer: (taskId: number, answer: string) => call(TaskSchema, 'POST', `/tasks/${taskId}/answer`, { answer }),
@@ -72,6 +77,9 @@ export const api = {
   screenshotUrl: (screenshotId: number) => `/api/screenshots/${screenshotId}/image`,
   tasks: () => call(z.array(TaskSchema), 'GET', '/tasks'),
   createTask: (draft: TaskDraft) => call(TaskSchema, 'POST', '/tasks', draft),
+  updateTask: (taskId: number, patch: TaskPatchDraft) => call(TaskSchema, 'PATCH', `/tasks/${taskId}`, patch),
+  reopenTask: (taskId: number, patch: TaskPatchDraft) => call(TaskSchema, 'POST', `/tasks/${taskId}/reopen`, patch),
+  deleteTask: (taskId: number) => call(z.null(), 'DELETE', `/tasks/${taskId}`),
   sendEvent: (taskId: number, event: TaskEvent) => call(TaskSchema, 'POST', `/tasks/${taskId}/events`, { event }),
   stop: (taskId: number) => call(z.object({ stopping: z.boolean() }), 'POST', `/tasks/${taskId}/stop`),
   runs: (taskId: number) => call(z.array(RunSchema), 'GET', `/tasks/${taskId}/runs`),

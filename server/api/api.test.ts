@@ -7,11 +7,12 @@ import { SqliteRunRepo } from '../infra/sqlite/sqliteRunRepo';
 import { SqliteTaskRepo } from '../infra/sqlite/sqliteTaskRepo';
 import { SqliteTemplateRepo } from '../infra/sqlite/sqliteTemplateRepo';
 import { fakeClock, memoryDb } from '../infra/sqlite/testDb';
+import { MemoryService } from '../services/memoryService';
 import { ProjectService } from '../services/projectService';
 import { ReviewService } from '../services/reviewService';
 import { TaskService } from '../services/taskService';
 import { TemplateService } from '../services/templateService';
-import { FakeGit, FakeScheduler } from '../services/testFakes';
+import { FakeGit, FakeMemoryFiles, FakeScheduler } from '../services/testFakes';
 import { SqliteCheckRepo } from '../infra/sqlite/sqliteCheckRepo';
 import { SqliteScreenshotRepo } from '../infra/sqlite/sqliteScreenshotRepo';
 import { SqliteSnapshotRepo } from '../infra/sqlite/sqliteSnapshotRepo';
@@ -28,10 +29,11 @@ describe('HTTP API', () => {
   let scheduler: FakeScheduler;
   let runRepo: SqliteRunRepo;
   let shotRepo: SqliteScreenshotRepo;
+  let snapshotRepo: SqliteSnapshotRepo;
 
   const CONTROL_TOKEN = 'a'.repeat(64);
   let shutdowns = 0;
-  const send = (method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: object, headers: Record<string, string> = {}) =>
+  const send = (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, payload?: object, headers: Record<string, string> = {}) =>
     app.inject({ method, url, headers: { host: HOST, ...headers }, ...(payload === undefined ? {} : { payload }) });
   const createProject = async () =>
     (await send('POST', '/api/projects', { name: 'shop', repoPath: '/repos/shop', workingBranch: 'develop' })).json();
@@ -46,13 +48,14 @@ describe('HTTP API', () => {
     const runs = new SqliteRunRepo(db, clock);
     runRepo = runs;
     shotRepo = new SqliteScreenshotRepo(db, clock);
+    snapshotRepo = new SqliteSnapshotRepo(db, clock);
     const hub = new EventHub();
     scheduler = new FakeScheduler();
     kicked = scheduler.kicked;
     app = buildServer(
       {
         projects: new ProjectService(projects, tasks, { isGitRepo: (p) => p.startsWith('/repos/') }, scheduler, runs, new FakeGit()),
-        tasks: new TaskService(projects, tasks, runs, scheduler, hub),
+        tasks: new TaskService(projects, tasks, runs, snapshotRepo, scheduler, hub),
         review: new ReviewService({
           projects,
           tasks,
@@ -60,12 +63,13 @@ describe('HTTP API', () => {
           checks: new SqliteCheckRepo(db),
           screenshots: shotRepo,
           screenshotFiles: { read: (file) => (file === '1/1/1-root-desktop.png' ? PNG : null) },
-          snapshots: new SqliteSnapshotRepo(db, clock),
+          snapshots: snapshotRepo,
           git: new FakeGit(),
           scheduler,
           events: hub,
         }),
         templates: new TemplateService(projects, new SqliteTemplateRepo(db, clock)),
+        memory: new MemoryService(projects, tasks, new FakeMemoryFiles(), clock),
         control: { token: CONTROL_TOKEN, shutdown: () => shutdowns++ },
         subscribe: (l) => hub.subscribe(l),
         heartbeatMs: 60_000,
@@ -160,6 +164,37 @@ describe('HTTP API', () => {
       expect((await send('PATCH', `/api/tasks/${task.id}`, { status: 'done' })).statusCode).toBe(400);
     });
 
+    it('reopens a cancelled task with edits and drops its old snapshot', async () => {
+      const { id: projectId } = await createProject();
+      const task = await createTask(projectId);
+      expect((await send('POST', `/api/tasks/${task.id}/reopen`, {})).statusCode).toBe(409);
+      await send('POST', `/api/tasks/${task.id}/cancel`);
+      snapshotRepo.save(task.id, { branch: 'develop', head: 'abc123', untracked: [], emptyDirs: [] });
+
+      expect((await send('POST', `/api/tasks/${task.id}/reopen`, { status: 'todo' })).statusCode).toBe(400);
+      const res = await send('POST', `/api/tasks/${task.id}/reopen`, { title: 'Second try' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ status: 'backlog', title: 'Second try' });
+      expect(snapshotRepo.get(task.id)).toBeUndefined();
+      expect((await send('POST', '/api/tasks/999/reopen')).statusCode).toBe(404);
+    });
+
+    it('deletes only Backlog and Cancelled tasks', async () => {
+      const { id: projectId } = await createProject();
+      const backlog = await createTask(projectId, 'backlog');
+      const todo = await createTask(projectId, 'todo');
+      const cancelled = await createTask(projectId, 'cancelled');
+      await send('POST', `/api/tasks/${todo.id}/events`, { event: 'promote' });
+      await send('POST', `/api/tasks/${cancelled.id}/cancel`);
+
+      expect((await send('DELETE', `/api/tasks/${todo.id}`)).statusCode).toBe(409);
+      expect((await send('DELETE', `/api/tasks/${backlog.id}`)).statusCode).toBe(204);
+      expect((await send('DELETE', `/api/tasks/${cancelled.id}`)).statusCode).toBe(204);
+      expect((await send('DELETE', `/api/tasks/${cancelled.id}`)).statusCode).toBe(404);
+      expect((await send('DELETE', '/api/tasks/abc')).statusCode).toBe(400);
+      expect((await send('GET', '/api/tasks')).json().map((t: { id: number }) => t.id)).toEqual([todo.id]);
+    });
+
     it('validates reject feedback and refuses tasks not in review', async () => {
       const { id: projectId } = await createProject();
       const task = await createTask(projectId);
@@ -188,6 +223,20 @@ describe('HTTP API', () => {
       expect((await send('DELETE', `/api/templates/${template.id}`)).statusCode).toBe(204);
       expect((await send('DELETE', `/api/templates/${template.id}`)).statusCode).toBe(404);
       expect((await send('GET', `/api/projects/${projectId}/templates`)).json()).toEqual([]);
+    });
+
+    it('reads and replaces project memory, validating the body', async () => {
+      const { id: projectId } = await createProject();
+      expect((await send('GET', `/api/projects/${projectId}/memory`)).json()).toEqual({ decisions: [], knowhow: [] });
+
+      const saved = await send('PUT', `/api/projects/${projectId}/memory`, { decisions: [{ area: 'deps', text: 'Ask before adding one' }], knowhow: [] });
+      expect(saved.statusCode).toBe(200);
+      expect(saved.json().decisions).toEqual([{ area: 'deps', text: 'Ask before adding one', taskId: null, date: expect.stringMatching(/^\d{4}-/) }]);
+      expect((await send('GET', `/api/projects/${projectId}/memory`)).json()).toEqual(saved.json());
+
+      expect((await send('PUT', `/api/projects/${projectId}/memory`, { decisions: [{ text: ' ' }], knowhow: [] })).statusCode).toBe(400);
+      expect((await send('PUT', `/api/projects/${projectId}/memory`, { decisions: [] })).statusCode).toBe(400);
+      expect((await send('PUT', '/api/projects/999/memory', { decisions: [], knowhow: [] })).statusCode).toBe(404);
     });
 
     it('shuts down only for the right control token, after replying', async () => {

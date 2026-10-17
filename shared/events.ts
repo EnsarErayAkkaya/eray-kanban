@@ -5,6 +5,7 @@ import { TaskSchema } from './task';
 // Pushed to the UI over SSE.
 export const BoardEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('task'), task: TaskSchema }),
+  z.object({ type: z.literal('taskDeleted'), taskId: z.number().int().positive() }),
   z.object({ type: z.literal('run'), run: RunSchema }),
   z.object({ type: z.literal('log'), taskId: z.number().int().positive(), lines: z.array(RunLogLineSchema) }),
   // blocked says why the project's next task cannot start, or null once it can.

@@ -25,6 +25,7 @@ const ALLOWED: ReadonlyArray<[TaskStatus, TaskEvent, TaskStatus]> = [
   ['in_progress', 'cancel', 'cancelled'],
   ['needs_input', 'cancel', 'cancelled'],
   ['in_review', 'cancel', 'cancelled'],
+  ['cancelled', 'reopen', 'backlog'],
 ];
 
 const isAllowed = (from: TaskStatus, event: TaskEvent) =>
@@ -49,10 +50,10 @@ describe('taskMachine', () => {
     expect(ALLOWED.length + ILLEGAL.length).toBe(TASK_STATUSES.length * TASK_EVENTS.length);
   });
 
-  it('keeps done and cancelled terminal', () => {
+  it('keeps done terminal and lets cancelled only reopen', () => {
     for (const event of TASK_EVENTS) {
       expect(canTransition('done', event)).toBe(false);
-      expect(canTransition('cancelled', event)).toBe(false);
+      expect(canTransition('cancelled', event)).toBe(event === 'reopen');
     }
   });
 

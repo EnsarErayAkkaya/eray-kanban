@@ -409,6 +409,10 @@ input[type='radio'] {
   border-left: 3px solid transparent;
 }
 
+.card {
+  cursor: pointer;
+}
+
 .card[draggable='true'] {
   cursor: grab;
 }
@@ -1101,6 +1105,38 @@ input[type='radio'] {
   gap: 6px;
 }
 
+/* Memory */
+
+.memory {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.memory__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.memory__area {
+  width: 110px;
+}
+
+.memory__text {
+  flex: 1;
+  min-width: 200px;
+}
+
+.memory__meta {
+  min-width: 70px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* @-references */
 
 .mention {
@@ -1243,6 +1279,29 @@ input[type='radio'] {
 
 .drawer__task p {
   white-space: pre-wrap;
+}
+
+.drawer__task-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 10px 0 0;
+  font-size: 13px;
+}
+
+.facts dt {
+  color: var(--graphite);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .drawer__task h4 {

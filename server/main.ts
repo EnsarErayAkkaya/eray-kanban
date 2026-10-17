@@ -10,6 +10,7 @@ import { WebAdapter } from './adapters/web/webAdapter';
 import { buildServer } from './api/buildServer';
 import { ClaudeCliAgent } from './infra/claudeCli/claudeCliAgent';
 import { EventHub } from './infra/events/eventHub';
+import { FsMemoryFiles } from './infra/fs/memoryFiles';
 import { FsRepoProbe } from './infra/fs/repoProbe';
 import { writeControlToken } from './infra/fs/controlToken';
 import { FsScreenshotFiles } from './infra/fs/screenshotFiles';
@@ -29,6 +30,7 @@ import { SqliteSnapshotRepo } from './infra/sqlite/sqliteSnapshotRepo';
 import { SqliteTaskRepo } from './infra/sqlite/sqliteTaskRepo';
 import { SqliteTemplateRepo } from './infra/sqlite/sqliteTemplateRepo';
 import type { AdapterRegistry, Logger, Notifier } from './services/ports';
+import { MemoryService } from './services/memoryService';
 import { ProjectService } from './services/projectService';
 import { ReviewService } from './services/reviewService';
 import { Scheduler } from './services/scheduler';
@@ -106,7 +108,7 @@ async function main(): Promise<void> {
   const app = buildServer(
     {
       projects: new ProjectService(projectRepo, taskRepo, new FsRepoProbe(), scheduler, runRepo, git),
-      tasks: new TaskService(projectRepo, taskRepo, runRepo, scheduler, hub),
+      tasks: new TaskService(projectRepo, taskRepo, runRepo, snapshotRepo, scheduler, hub),
       review: new ReviewService({
         projects: projectRepo,
         tasks: taskRepo,
@@ -120,6 +122,7 @@ async function main(): Promise<void> {
         events: hub,
       }),
       templates: new TemplateService(projectRepo, new SqliteTemplateRepo(db, clock)),
+      memory: new MemoryService(projectRepo, taskRepo, new FsMemoryFiles(), clock),
       control: { token: control.token, shutdown: () => shutdown() },
       subscribe: (listener) => hub.subscribe(listener),
       heartbeatMs: 25_000,

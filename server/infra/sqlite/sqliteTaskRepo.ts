@@ -89,6 +89,7 @@ export class SqliteTaskRepo implements TaskRepo {
     now: string;
   }>;
   private readonly _setCommitSha: Statement<{ id: number; sha: string; now: string }>;
+  private readonly _delete: (id: number) => number[];
 
   constructor(
     db: Database,
@@ -107,20 +108,35 @@ export class SqliteTaskRepo implements TaskRepo {
         depends_on = @depends_on, updated_at = @now
       WHERE id = @id`);
     this._setStatus = db.prepare('UPDATE tasks SET status = @to, updated_at = @now WHERE id = @id AND status = @from');
-    this._get = db.prepare('SELECT * FROM tasks WHERE id = ?');
-    this._listAll = db.prepare('SELECT * FROM tasks ORDER BY position');
-    this._listByProject = db.prepare('SELECT * FROM tasks WHERE project_id = ? ORDER BY position');
+    this._get = db.prepare('SELECT * FROM tasks WHERE id = ? AND deleted_at IS NULL');
+    this._listAll = db.prepare('SELECT * FROM tasks WHERE deleted_at IS NULL ORDER BY position');
+    this._listByProject = db.prepare('SELECT * FROM tasks WHERE project_id = ? AND deleted_at IS NULL ORDER BY position');
     this._nextTodo = db.prepare(`
       SELECT t.* FROM tasks t
       LEFT JOIN tasks dep ON dep.id = t.depends_on
-      WHERE t.project_id = ? AND t.status = 'todo' AND (t.depends_on IS NULL OR dep.status = 'done')
+      WHERE t.project_id = ? AND t.status = 'todo' AND t.deleted_at IS NULL AND (t.depends_on IS NULL OR dep.status = 'done')
       ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END, t.position
       LIMIT 1`);
-    this._active = db.prepare(`SELECT * FROM tasks WHERE project_id = ? AND status IN (${OCCUPYING_SQL})`);
+    this._active = db.prepare(`SELECT * FROM tasks WHERE project_id = ? AND deleted_at IS NULL AND status IN (${OCCUPYING_SQL})`);
     this._setGitIssue = db.prepare(`
       UPDATE tasks SET git_issue = @issue, git_issue_detail = @detail, pending_push = @pending, updated_at = @now
       WHERE id = @id`);
     this._setCommitSha = db.prepare('UPDATE tasks SET commit_sha = @sha, updated_at = @now WHERE id = @id');
+
+    const dependents = db.prepare<[number], { id: number }>('SELECT id FROM tasks WHERE depends_on = ? AND deleted_at IS NULL');
+    const clearDependency = db.prepare<{ id: number; now: string }>(
+      'UPDATE tasks SET depends_on = NULL, updated_at = @now WHERE id = @id',
+    );
+    const markDeleted = db.prepare<{ id: number; now: string }>(
+      'UPDATE tasks SET deleted_at = @now, updated_at = @now WHERE id = @id AND deleted_at IS NULL',
+    );
+    this._delete = db.transaction((id: number): number[] => {
+      const now = this._clock();
+      if (markDeleted.run({ id, now }).changes === 0) throw new NotFoundError('task', id);
+      const ids = dependents.all(id).map((r) => r.id);
+      for (const dep of ids) clearDependency.run({ id: dep, now });
+      return ids;
+    });
   }
 
   create(task: NewTask): Task {
@@ -181,6 +197,10 @@ export class SqliteTaskRepo implements TaskRepo {
   setCommitSha(id: number, sha: string): Task {
     if (this._setCommitSha.run({ id, sha, now: this._clock() }).changes === 0) throw new NotFoundError('task', id);
     return this._require(id);
+  }
+
+  delete(id: number): Task[] {
+    return this._delete(id).map((dep) => this._require(dep));
   }
 
   activeTask(projectId: number): Task | undefined {

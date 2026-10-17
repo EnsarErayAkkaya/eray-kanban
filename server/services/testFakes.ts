@@ -1,4 +1,5 @@
 import type { CheckResult } from '@shared/check';
+import type { MemoryEntry, MemoryKind, ProjectMemory } from '@shared/memory';
 import type { ProjectStatus } from '@shared/events';
 import type { Project } from '@shared/project';
 import type {
@@ -6,6 +7,7 @@ import type {
   FileDiff,
   GitPort,
   GuardResult,
+  MemoryFiles,
   MergeResult,
   Notifier,
   ProjectAdapter,
@@ -166,5 +168,19 @@ export class FakeGit implements GitPort {
   files: string[] = ['README.md', 'src/app.ts'];
   listFiles(): Promise<string[]> {
     return Promise.resolve(this.files);
+  }
+}
+
+export class FakeMemoryFiles implements MemoryFiles {
+  readonly repos = new Map<string, ProjectMemory>();
+  readonly writes: Array<[string, MemoryKind]> = [];
+
+  async read(repo: string): Promise<ProjectMemory> {
+    return this.repos.get(repo) ?? { decisions: [], knowhow: [] };
+  }
+
+  async write(repo: string, kind: MemoryKind, entries: readonly MemoryEntry[]): Promise<void> {
+    this.writes.push([repo, kind]);
+    this.repos.set(repo, { ...(await this.read(repo)), [kind]: [...entries] });
   }
 }

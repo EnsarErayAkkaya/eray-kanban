@@ -2,10 +2,12 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { IdSchema } from '@shared/common';
 import type { BoardEvent } from '@shared/events';
+import { UpdateMemoryInput } from '@shared/memory';
 import { CreateProjectInput, UpdateProjectInput } from '@shared/project';
 import { CreateTaskInput, TaskEventInput, UpdateTaskInput } from '@shared/task';
 import { CreateTemplateInput, UpdateTemplateInput } from '@shared/template';
 import { AcceptTaskInput, AnswerTaskInput, RejectTaskInput } from '@shared/review';
+import type { MemoryService } from '../services/memoryService';
 import type { ProjectService } from '../services/projectService';
 import type { ReviewService } from '../services/reviewService';
 import type { TaskService } from '../services/taskService';
@@ -17,6 +19,7 @@ export interface RouteDeps {
   readonly tasks: TaskService;
   readonly review: ReviewService;
   readonly templates: TemplateService;
+  readonly memory: MemoryService;
   readonly control: ControlDeps;
   readonly subscribe: (listener: (event: BoardEvent) => void) => () => void;
   readonly heartbeatMs: number;
@@ -63,6 +66,11 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     reply.code(204);
   });
 
+  app.get('/api/projects/:id/memory', async (req) => deps.memory.get(IdParams.parse(req.params).id));
+  app.put('/api/projects/:id/memory', async (req) => {
+    return deps.memory.replace(IdParams.parse(req.params).id, UpdateMemoryInput.parse(req.body));
+  });
+
   app.get('/api/tasks', async (req) => tasks.list(TaskQuery.parse(req.query).projectId));
   app.post('/api/tasks', async (req, reply) => {
     reply.code(201);
@@ -70,6 +78,13 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   });
   app.patch('/api/tasks/:id', async (req) => {
     return tasks.update(IdParams.parse(req.params).id, UpdateTaskInput.parse(req.body));
+  });
+  app.delete('/api/tasks/:id', async (req, reply) => {
+    tasks.delete(IdParams.parse(req.params).id);
+    reply.code(204);
+  });
+  app.post('/api/tasks/:id/reopen', async (req) => {
+    return tasks.reopen(IdParams.parse(req.params).id, UpdateTaskInput.parse(req.body ?? {}));
   });
   app.post('/api/tasks/:id/events', async (req) => {
     return tasks.applyBoardEvent(IdParams.parse(req.params).id, TaskEventInput.parse(req.body).event);

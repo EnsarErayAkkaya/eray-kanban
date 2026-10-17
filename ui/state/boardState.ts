@@ -103,6 +103,8 @@ function applyEvent(state: BoardState, event: BoardEvent): BoardState {
   switch (event.type) {
     case 'task':
       return isStale(state.tasks, event.task) ? state : { ...state, tasks: upsert(state.tasks, event.task) };
+    case 'taskDeleted':
+      return { ...state, tasks: state.tasks.filter((t) => t.id !== event.taskId) };
     case 'run':
       return { ...state, runs: { ...state.runs, [event.run.taskId]: upsert(state.runs[event.run.taskId] ?? [], event.run) } };
     case 'log':

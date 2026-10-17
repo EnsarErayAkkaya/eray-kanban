@@ -18,6 +18,7 @@ const TRANSITIONS: Readonly<Record<TaskEvent, Transition>> = {
   reject: { from: ['in_review'], to: 'in_progress' },
   accept: { from: ['in_review'], to: 'done' },
   cancel: { from: ['backlog', 'todo', 'in_progress', 'needs_input', 'in_review'], to: 'cancelled' },
+  reopen: { from: ['cancelled'], to: 'backlog' },
 };
 
 // Invariant 3: while a task is in one of these, its project runs nothing else.

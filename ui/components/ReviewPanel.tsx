@@ -36,12 +36,20 @@ interface Props {
   readonly project: Project | undefined;
   readonly runs: readonly Run[];
   readonly log: readonly RunLogLine[];
+  /** The task this one waits for; null when it has none or it is not loaded. */
+  readonly dependency: Task | null;
   readonly onReview: (action: ReviewAction) => Promise<ActionResult>;
   readonly onStop: () => void;
+  readonly onEdit: () => void;
+  readonly onDelete: () => Promise<ActionResult>;
   readonly onClose: () => void;
 }
 
-export function ReviewPanel({ task, project, runs, log, onReview, onStop, onClose }: Props) {
+// Delete and edit only where no agent work is attached; a cancel already rolled it back.
+const EDITABLE: ReadonlySet<Task['status']> = new Set(['backlog', 'todo', 'cancelled']);
+const DELETABLE: ReadonlySet<Task['status']> = new Set(['backlog', 'cancelled']);
+
+export function ReviewPanel({ task, project, runs, log, dependency, onReview, onStop, onEdit, onDelete, onClose }: Props) {
   const lastRun = runs.at(-1);
   const version = `${task.status}:${task.updatedAt}:${runs.length}:${lastRun?.outcome ?? ''}`;
   const { data: changes, loading, error: changesError } = useVersionedLoad(() => api.changes(task.id), version);
@@ -73,10 +81,10 @@ export function ReviewPanel({ task, project, runs, log, onReview, onStop, onClos
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, openShot]);
 
-  const act = async (action: ReviewAction, closeOnSuccess: boolean) => {
+  const act = async (action: ReviewAction | 'delete', closeOnSuccess: boolean) => {
     setBusy(true);
     setError(null);
-    const result = await onReview(action);
+    const result = await (action === 'delete' ? onDelete() : onReview(action));
     setBusy(false);
     if (!result.ok) setError(result.error);
     else if (closeOnSuccess) onClose();
@@ -96,9 +104,10 @@ export function ReviewPanel({ task, project, runs, log, onReview, onStop, onClos
   const inReview = task.status === 'in_review';
   const started = task.status === 'in_progress' || task.status === 'needs_input' || inReview;
   const totalCost = runs.reduce((sum, r) => sum + (r.costUsd ?? 0), 0);
+  const waiting = EDITABLE.has(task.status) && runs.length === 0;
 
   return (
-    <div className="drawer" role="dialog" aria-label={`Review of task ${task.id}`}>
+    <div className="drawer" role="dialog" aria-label={`${inReview ? 'Review' : 'Details'} of task ${task.id}`}>
       <div className="drawer__backdrop" onClick={onClose} />
       <aside className="drawer__panel">
         <header className="drawer__head">
@@ -122,73 +131,108 @@ export function ReviewPanel({ task, project, runs, log, onReview, onStop, onClos
           </div>
         )}
 
-        {(task.description.trim() !== '' || task.acceptanceCriteria.trim() !== '') && (
-          <section className="drawer__section drawer__task">
-            <h3>Task</h3>
-            {task.description.trim() !== '' && (
+        <section className="drawer__section drawer__task">
+          <h3>Task</h3>
+          {task.description.trim() !== '' ? (
+            <p>
+              <RefText text={task.description} />
+            </p>
+          ) : (
+            <p className="hint">No description.</p>
+          )}
+          {task.acceptanceCriteria.trim() !== '' && (
+            <>
+              <h4>Acceptance criteria</h4>
               <p>
-                <RefText text={task.description} />
+                <RefText text={task.acceptanceCriteria} />
               </p>
-            )}
-            {task.acceptanceCriteria.trim() !== '' && (
+            </>
+          )}
+          <dl className="facts">
+            <dt>Priority</dt>
+            <dd>{task.priority}</dd>
+            <dt>Model</dt>
+            <dd>{task.model}</dd>
+            <dt>Turn limit</dt>
+            <dd>{task.turnLimit}</dd>
+            <dt>Screenshots</dt>
+            <dd>
+              {!task.visual ? 'none' : task.routes.length > 0 ? task.routes.join(', ') : 'pages the agent changed'}
+            </dd>
+            <dt>Depends on</dt>
+            <dd>
+              {task.dependsOn === null
+                ? 'nothing'
+                : `#${task.dependsOn}${dependency ? ` ${dependency.title} (${STATUS_LABEL[dependency.status]})` : ''}`}
+            </dd>
+          </dl>
+          {EDITABLE.has(task.status) && (
+            <div className="drawer__task-actions">
+              <button className="btn" disabled={busy} onClick={onEdit}>
+                {task.status === 'cancelled' ? 'Edit & move to Backlog' : 'Edit'}
+              </button>
+              {DELETABLE.has(task.status) && (
+                <ConfirmButton
+                  label="Delete task"
+                  confirmLabel="Click again to delete"
+                  disabled={busy}
+                  onConfirm={() => void act('delete', true)}
+                />
+              )}
+            </div>
+          )}
+        </section>
+
+        {!waiting && (
+          <section className="drawer__section">
+            <h3>Agent summary</h3>
+            {review === null ? (
+              <p className="hint">The agent did not leave a summary.</p>
+            ) : review.outcome === 'needs_input' ? (
               <>
-                <h4>Acceptance criteria</h4>
                 <p>
-                  <RefText text={task.acceptanceCriteria} />
+                  <strong>Question:</strong> {review.question}
                 </p>
+                {task.status === 'needs_input' && (
+                  <form onSubmit={(e) => void answer(e)} className="drawer__reject">
+                    <label>
+                      Your answer
+                      <textarea
+                        rows={3}
+                        value={answerText}
+                        onChange={(e) => setAnswerText(e.target.value)}
+                        placeholder="The agent resumes with its context and carries on."
+                      />
+                    </label>
+                    <button className="btn btn--primary" disabled={busy || answerText.trim() === ''}>
+                      Send answer
+                    </button>
+                  </form>
+                )}
+              </>
+            ) : (
+              <>
+                <p>{review.summary}</p>
+                {review.notes.length > 0 && (
+                  <ul className="drawer__list">
+                    {review.notes.map((n) => (
+                      <li key={n}>{n}</li>
+                    ))}
+                  </ul>
+                )}
+                {review.concerns.length > 0 && (
+                  <ul className="drawer__list drawer__list--concerns">
+                    {review.concerns.map((c) => (
+                      <li key={c}>{c}</li>
+                    ))}
+                  </ul>
+                )}
               </>
             )}
           </section>
         )}
 
-        <section className="drawer__section">
-          <h3>Agent summary</h3>
-          {review === null ? (
-            <p className="hint">The agent did not leave a summary.</p>
-          ) : review.outcome === 'needs_input' ? (
-            <>
-              <p>
-                <strong>Question:</strong> {review.question}
-              </p>
-              {task.status === 'needs_input' && (
-                <form onSubmit={(e) => void answer(e)} className="drawer__reject">
-                  <label>
-                    Your answer
-                    <textarea
-                      rows={3}
-                      value={answerText}
-                      onChange={(e) => setAnswerText(e.target.value)}
-                      placeholder="The agent resumes with its context and carries on."
-                    />
-                  </label>
-                  <button className="btn btn--primary" disabled={busy || answerText.trim() === ''}>
-                    Send answer
-                  </button>
-                </form>
-              )}
-            </>
-          ) : (
-            <>
-              <p>{review.summary}</p>
-              {review.notes.length > 0 && (
-                <ul className="drawer__list">
-                  {review.notes.map((n) => (
-                    <li key={n}>{n}</li>
-                  ))}
-                </ul>
-              )}
-              {review.concerns.length > 0 && (
-                <ul className="drawer__list drawer__list--concerns">
-                  {review.concerns.map((c) => (
-                    <li key={c}>{c}</li>
-                  ))}
-                </ul>
-              )}
-            </>
-          )}
-        </section>
-
-        {task.visual && (
+        {task.visual && !waiting && (
           <section className="drawer__section">
             <h3>Screenshots</h3>
             {shots.length === 0 ? (
@@ -220,19 +264,21 @@ export function ReviewPanel({ task, project, runs, log, onReview, onStop, onClos
           </section>
         )}
 
-        <section className="drawer__section">
-          <h3>
-            Changed files{changes?.available ? ` (${changes.files.length})` : ''}
-            {changes?.baseHead && <span className="hint"> against {changes.baseHead.slice(0, 8)}</span>}
-          </h3>
-          {loading && !changes && <p className="hint">Reading the repo…</p>}
-          {changesError && <p className="form-error">{changesError}</p>}
-          {changes && !changes.available && <p className="hint">{changes.reason}</p>}
-          {changes?.available && changes.files.length === 0 && <p className="hint">No files changed.</p>}
-          {changes?.files.map((f) => (
-            <DiffView key={f.path} file={f} open={changes.files.length <= 5} />
-          ))}
-        </section>
+        {!waiting && (
+          <section className="drawer__section">
+            <h3>
+              Changed files{changes?.available ? ` (${changes.files.length})` : ''}
+              {changes?.baseHead && <span className="hint"> against {changes.baseHead.slice(0, 8)}</span>}
+            </h3>
+            {loading && !changes && <p className="hint">Reading the repo…</p>}
+            {changesError && <p className="form-error">{changesError}</p>}
+            {changes && !changes.available && <p className="hint">{changes.reason}</p>}
+            {changes?.available && changes.files.length === 0 && <p className="hint">No files changed.</p>}
+            {changes?.files.map((f) => (
+              <DiffView key={f.path} file={f} open={changes.files.length <= 5} />
+            ))}
+          </section>
+        )}
 
         {inReview && (
           <section className="drawer__section drawer__actions">
@@ -319,35 +365,37 @@ export function ReviewPanel({ task, project, runs, log, onReview, onStop, onClos
           </p>
         )}
 
-        <section className="drawer__section">
-          <h3>
-            Runs{runs.length > 0 && <span className="hint"> · ${totalCost.toFixed(3)} total</span>}
-          </h3>
-          {runs.length === 0 && <p className="hint">No runs yet.</p>}
-          <ol className="runs">
-            {runs.map((r) => (
-              <li key={r.id}>
-                <div>
-                  <strong>{KIND_LABEL[r.kind]}</strong> · {r.outcome.replace('_', ' ')}
-                  {r.numTurns !== null && ` · ${r.numTurns} turns`}
-                  {r.costUsd !== null && ` · $${r.costUsd.toFixed(3)}`}
-                  <span className="hint"> · {new Date(r.startedAt).toLocaleTimeString()}</span>
-                </div>
-                {r.error && <div className="card__error">{r.error}</div>}
-                {r.kind !== 'initial' && (
-                  <details>
-                    <summary className="hint">What the agent was sent</summary>
-                    <pre className="runs__input">{r.input}</pre>
-                  </details>
-                )}
-              </li>
-            ))}
-          </ol>
-          <details open={task.status === 'in_progress'}>
-            <summary className="hint">Log</summary>
-            <LogView lines={log} />
-          </details>
-        </section>
+        {!waiting && (
+          <section className="drawer__section">
+            <h3>
+              Runs{runs.length > 0 && <span className="hint"> · ${totalCost.toFixed(3)} total</span>}
+            </h3>
+            {runs.length === 0 && <p className="hint">No runs yet.</p>}
+            <ol className="runs">
+              {runs.map((r) => (
+                <li key={r.id}>
+                  <div>
+                    <strong>{KIND_LABEL[r.kind]}</strong> · {r.outcome.replace('_', ' ')}
+                    {r.numTurns !== null && ` · ${r.numTurns} turns`}
+                    {r.costUsd !== null && ` · $${r.costUsd.toFixed(3)}`}
+                    <span className="hint"> · {new Date(r.startedAt).toLocaleTimeString()}</span>
+                  </div>
+                  {r.error && <div className="card__error">{r.error}</div>}
+                  {r.kind !== 'initial' && (
+                    <details>
+                      <summary className="hint">What the agent was sent</summary>
+                      <pre className="runs__input">{r.input}</pre>
+                    </details>
+                  )}
+                </li>
+              ))}
+            </ol>
+            <details open={task.status === 'in_progress'}>
+              <summary className="hint">Log</summary>
+              <LogView lines={log} />
+            </details>
+          </section>
+        )}
       </aside>
       {openShot && <ScreenshotLightbox shot={openShot} imageUrl={api.screenshotUrl} onClose={() => setOpenShot(null)} />}
     </div>

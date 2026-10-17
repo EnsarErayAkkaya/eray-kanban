@@ -1,4 +1,3 @@
-import path from 'node:path';
 import type { AgentRequest } from '../../services/ports';
 
 export const FILE_TOOLS = ['Read', 'Edit', 'Write', 'Glob', 'Grep'] as const;
@@ -23,8 +22,11 @@ export const DENIED_BASH = [
 // Rollback cannot restore ignored files, and env files hold secrets; tested to also hide them from Grep and Glob.
 export const DENIED_FILES = ['Read(**/.env*)', 'Edit(**/.env*)', 'Write(**/.env*)'] as const;
 
+// Decisions and know-how change only through the board; the agent already gets them in its system prompt.
+export const DENIED_MEMORY = ['Edit(**/.kanban/**)', 'Write(**/.kanban/**)'] as const;
+
 // The prompt goes on stdin, so it never meets argv parsing or the variadic tool flags.
-export function buildClaudeArgs(req: AgentRequest, opts: { hasClaudeMd: boolean }): string[] {
+export function buildClaudeArgs(req: AgentRequest, opts: { systemPromptFile: string | null }): string[] {
   const bash = req.allowedCommands.length > 0;
   const args = [
     '-p',
@@ -39,11 +41,11 @@ export function buildClaudeArgs(req: AgentRequest, opts: { hasClaudeMd: boolean 
     '--strict-mcp-config',
     '--disable-slash-commands',
   ];
-  if (opts.hasClaudeMd) args.push('--append-system-prompt-file', path.join(req.cwd, 'CLAUDE.md'));
+  if (opts.systemPromptFile) args.push('--append-system-prompt-file', opts.systemPromptFile);
   // Either way the session UUID lands in argv, which is how the orphan reaper recognizes the process.
   args.push(req.resume ? '--resume' : '--session-id', req.sessionId);
   args.push('--tools', ...FILE_TOOLS, ...(bash ? ['Bash'] : []));
   args.push('--allowedTools', ...FILE_TOOLS, ...req.allowedCommands.map((cmd) => `Bash(${cmd}:*)`));
-  args.push('--disallowedTools', ...DENIED_BASH.map((cmd) => `Bash(${cmd}:*)`), ...DENIED_FILES);
+  args.push('--disallowedTools', ...DENIED_BASH.map((cmd) => `Bash(${cmd}:*)`), ...DENIED_FILES, ...DENIED_MEMORY);
   return args;
 }

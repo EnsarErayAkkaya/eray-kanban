@@ -13,11 +13,16 @@ const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-agent-'));
 
 afterAll(() => fs.rmSync(repo, { recursive: true, force: true }));
 
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-agent-tmp-'));
+
+afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
 function agent(env: Record<string, string>) {
   return new ClaudeCliAgent(
     new ProcessSupervisor(200),
     { bin: process.execPath, prefixArgs: [path.join(fixtures, 'fakeClaude.mjs')] },
     { ...process.env, ANTHROPIC_API_KEY: 'sk-should-be-dropped', ...env },
+    tmp,
   );
 }
 
@@ -54,6 +59,17 @@ describe('ClaudeCliAgent', () => {
     const { texts } = await runAgent({});
     fs.rmSync(path.join(repo, 'CLAUDE.md'));
     expect(texts.find((t) => t.startsWith('ARGS:'))).toContain(`--append-system-prompt-file ${path.join(repo, 'CLAUDE.md')}`);
+  });
+
+  it('passes CLAUDE.md and the memory files as one system prompt, removed after the run', async () => {
+    fs.writeFileSync(path.join(repo, 'CLAUDE.md'), '# rules');
+    fs.mkdirSync(path.join(repo, '.kanban'));
+    fs.writeFileSync(path.join(repo, '.kanban', 'knowhow.md'), '# Know-how\n\n- [db] Migrations are append-only\n');
+    const { texts } = await runAgent({});
+    fs.rmSync(path.join(repo, 'CLAUDE.md'));
+    fs.rmSync(path.join(repo, '.kanban'), { recursive: true });
+    expect(texts.find((t) => t.startsWith('SYSTEM:'))).toBe('SYSTEM:# rules\n\n# Know-how\n\n- [db] Migrations are append-only');
+    expect(fs.readdirSync(tmp)).toEqual([]);
   });
 
   it('reports a crash with the stderr tail when no result came', async () => {

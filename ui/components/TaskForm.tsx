@@ -13,17 +13,30 @@ interface Props {
   readonly projects: readonly Project[];
   readonly tasks: readonly Task[];
   readonly defaultProjectId: number | null;
+  /** Edits this task instead of creating one; its project and the template stay fixed. */
+  readonly task?: Task;
   readonly onSubmit: (draft: TaskDraft) => Promise<ActionResult>;
   readonly onClose: () => void;
 }
 
-export function TaskForm({ projects, tasks, defaultProjectId, onSubmit, onClose }: Props) {
+export function TaskForm({ projects, tasks, defaultProjectId, task, onSubmit, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [projectId, setProjectId] = useState(defaultProjectId ?? projects[0]?.id ?? 0);
+  const [projectId, setProjectId] = useState(task?.projectId ?? defaultProjectId ?? projects[0]?.id ?? 0);
   const [templateId, setTemplateId] = useState<number | null>(null);
   const { data: templates } = useVersionedLoad(() => api.templates(projectId), String(projectId));
   const template = templates?.find((t) => t.id === templateId);
+  const initial = {
+    priority: task?.priority ?? template?.priority ?? 'normal',
+    model: task?.model ?? template?.model ?? '',
+    turnLimit: task?.turnLimit ?? template?.turnLimit ?? '',
+    title: task?.title ?? template?.titlePrefix ?? '',
+    description: task?.description ?? template?.description ?? '',
+    acceptanceCriteria: task?.acceptanceCriteria ?? template?.acceptanceCriteria ?? '',
+    dependsOn: task?.dependsOn ?? '',
+    visual: task?.visual ?? template?.visual ?? false,
+    routes: (task?.routes ?? template?.routes ?? []).join('\n'),
+  };
   const [filesVersion, setFilesVersion] = useState(0);
   const files = useVersionedLoad(() => api.files(projectId), `${projectId}:${filesVersion}`);
   const entries = useMemo(() => buildEntries(files.data?.files ?? []), [files.data]);
@@ -32,8 +45,13 @@ export function TaskForm({ projects, tasks, defaultProjectId, onSubmit, onClose 
   const activate = (field: FieldHandle) => {
     lastField.current = field;
   };
-  // Done tasks are already satisfied and cancelled ones never would be.
-  const candidates = tasks.filter((t) => t.projectId === projectId && t.status !== 'done' && t.status !== 'cancelled');
+  // Done tasks are already satisfied and cancelled ones never would be; an edit keeps the one it has.
+  const candidates = tasks.filter(
+    (t) =>
+      t.projectId === projectId &&
+      t.id !== task?.id &&
+      (t.id === task?.dependsOn || (t.status !== 'done' && t.status !== 'cancelled')),
+  );
 
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -65,13 +83,14 @@ export function TaskForm({ projects, tasks, defaultProjectId, onSubmit, onClose 
 
   return (
     <form className="panel" onSubmit={(e) => void submit(e)}>
-      <h2>New task</h2>
+      <h2>{task ? `Edit task #${task.id}` : 'New task'}</h2>
       <div className="row">
         <label>
           Project
           <select
             name="projectId"
             value={projectId}
+            disabled={task !== undefined}
             onChange={(e) => {
               setProjectId(Number(e.target.value));
               setTemplateId(null);
@@ -84,28 +103,30 @@ export function TaskForm({ projects, tasks, defaultProjectId, onSubmit, onClose 
             ))}
           </select>
         </label>
-        <label>
-          Template
-          <select
-            value={templateId ?? ''}
-            disabled={!templates?.length}
-            onChange={(e) => setTemplateId(e.target.value ? Number(e.target.value) : null)}
-          >
-            <option value="">{templates?.length ? 'none' : 'no templates'}</option>
-            {templates?.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!task && (
+          <label>
+            Template
+            <select
+              value={templateId ?? ''}
+              disabled={!templates?.length}
+              onChange={(e) => setTemplateId(e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">{templates?.length ? 'none' : 'no templates'}</option>
+              {templates?.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
       {/* Picking a template remounts the fields so its values become their new defaults; all stay editable. */}
       <Fragment key={`${projectId}:${templateId ?? 'none'}`}>
         <div className="row">
           <label>
             Priority
-            <select name="priority" defaultValue={template?.priority ?? 'normal'}>
+            <select name="priority" defaultValue={initial.priority}>
               {PRIORITIES.map((p) => (
                 <option key={p}>{p}</option>
               ))}
@@ -113,8 +134,8 @@ export function TaskForm({ projects, tasks, defaultProjectId, onSubmit, onClose 
           </label>
           <label>
             Model
-            <select name="model" defaultValue={template?.model ?? ''}>
-              <option value="">project default</option>
+            <select name="model" defaultValue={initial.model}>
+              {!task && <option value="">project default</option>}
               {MODELS.map((m) => (
                 <option key={m}>{m}</option>
               ))}
@@ -122,7 +143,15 @@ export function TaskForm({ projects, tasks, defaultProjectId, onSubmit, onClose 
           </label>
           <label>
             Turn limit
-            <input name="turnLimit" type="number" min={1} max={500} placeholder="default" defaultValue={template?.turnLimit ?? ''} />
+            <input
+              name="turnLimit"
+              type="number"
+              min={1}
+              max={500}
+              placeholder="default"
+              required={task !== undefined}
+              defaultValue={initial.turnLimit}
+            />
           </label>
         </div>
         <MentionField
@@ -132,7 +161,7 @@ export function TaskForm({ projects, tasks, defaultProjectId, onSubmit, onClose 
           required
           maxLength={200}
           autoFocus
-          defaultValue={template?.titlePrefix ?? ''}
+          defaultValue={initial.title}
           entries={entries}
           onActivate={activate}
         />
@@ -142,7 +171,7 @@ export function TaskForm({ projects, tasks, defaultProjectId, onSubmit, onClose 
           multiline
           rows={4}
           placeholder="Type @ to reference a file or folder, or drop one here"
-          defaultValue={template?.description ?? ''}
+          defaultValue={initial.description}
           entries={entries}
           onActivate={activate}
           registerDefault={(field) => {
@@ -155,7 +184,7 @@ export function TaskForm({ projects, tasks, defaultProjectId, onSubmit, onClose 
           multiline
           rows={3}
           placeholder="- One check per line"
-          defaultValue={template?.acceptanceCriteria ?? ''}
+          defaultValue={initial.acceptanceCriteria}
           entries={entries}
           onActivate={activate}
         />
@@ -173,7 +202,7 @@ export function TaskForm({ projects, tasks, defaultProjectId, onSubmit, onClose 
         </details>
         <label>
           Depends on
-          <select name="dependsOn" defaultValue="">
+          <select name="dependsOn" defaultValue={initial.dependsOn}>
             <option value="">nothing, can start any time</option>
             {candidates.map((t) => (
               <option key={t.id} value={t.id}>
@@ -186,24 +215,30 @@ export function TaskForm({ projects, tasks, defaultProjectId, onSubmit, onClose 
         <fieldset className="panel__group">
           <legend>Screenshots</legend>
           <label className="check">
-            <input type="checkbox" name="visual" defaultChecked={template?.visual ?? false} />
+            <input type="checkbox" name="visual" defaultChecked={initial.visual} />
             Visual task: screenshot these pages for the review
           </label>
           <label>
             Routes, one per line
-            <textarea name="routes" rows={2} placeholder={'/\n/settings'} defaultValue={template?.routes.join('\n') ?? ''} />
+            <textarea name="routes" rows={2} placeholder={'/\n/settings'} defaultValue={initial.routes} />
             <small>Taken at the sizes in the project settings, after the checks. Leave empty to let the agent pick the pages it changed.</small>
           </label>
         </fieldset>
       </Fragment>
-      <p className="hint">New tasks start in Backlog. Drag one to Todo when it is ready for the agent.</p>
+      <p className="hint">
+        {task?.status === 'cancelled'
+          ? 'Saving moves the task back to Backlog. The agent starts it from scratch, on a fresh snapshot.'
+          : task
+            ? 'Changes apply the next time the agent starts this task.'
+            : 'New tasks start in Backlog. Drag one to Todo when it is ready for the agent.'}
+      </p>
       {error && <p className="form-error">{error}</p>}
       <div className="panel__actions">
         <button type="button" className="btn btn--ghost" onClick={onClose}>
           Cancel
         </button>
         <button className="btn btn--primary" disabled={busy}>
-          Add task
+          {task?.status === 'cancelled' ? 'Save & move to Backlog' : task ? 'Save' : 'Add task'}
         </button>
       </div>
     </form>

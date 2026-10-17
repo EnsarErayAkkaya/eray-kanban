@@ -29,6 +29,14 @@ describe('SqliteSnapshotRepo', () => {
     expect(repo.get(taskId)?.head).toBe('abc123');
   });
 
+  it('deletes a snapshot so a new one can be saved', () => {
+    repo.save(taskId, snapshot);
+    repo.delete(taskId);
+    expect(repo.get(taskId)).toBeUndefined();
+    repo.save(taskId, { ...snapshot, head: 'def456' });
+    expect(repo.get(taskId)?.head).toBe('def456');
+  });
+
   it('rejects a snapshot for a missing task', () => {
     expect(() => repo.save(999, snapshot)).toThrow(NotFoundError);
   });

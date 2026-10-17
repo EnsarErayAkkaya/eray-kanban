@@ -4,6 +4,7 @@ import type { BoardEvent, ProjectStatus } from '@shared/events';
 import type { NewProject, PROJECT_TYPES, Project, ProjectPatch, ScreenshotSize } from '@shared/project';
 import type { Screenshot } from '@shared/screenshot';
 import type { LogKind, ProjectUsage, Run, RunKind, RunLogLine, RunOutcome } from '@shared/run';
+import type { MemoryEntry, MemoryKind, ProjectMemory } from '@shared/memory';
 import type { ReviewJson } from '@shared/review';
 import type { GitIssue, Task, TaskPatch } from '@shared/task';
 import type { NewTemplate, TaskTemplate, TemplatePatch } from '@shared/template';
@@ -55,6 +56,8 @@ export interface TaskRepo {
   /** null clears the badge. */
   setGitIssue(id: number, issue: TaskGitIssue | null): Task;
   setCommitSha(id: number, sha: string): Task;
+  /** Soft delete; its runs stay for the cost totals. Returns the tasks that depended on it, now with none. */
+  delete(id: number): Task[];
 }
 
 export interface TaskGitIssue {
@@ -74,6 +77,7 @@ export interface SnapshotRepo {
   /** One per task; a second save for the same task fails with ConflictError. */
   save(taskId: number, snapshot: RepoSnapshot): void;
   get(taskId: number): RepoSnapshot | undefined;
+  delete(taskId: number): void;
 }
 
 export interface NewRun {
@@ -288,6 +292,12 @@ export interface WorkScheduler {
   resumeWithFeedback(taskId: number, feedback: string): Promise<void>;
   resumeWithAnswer(taskId: number, answer: string): Promise<void>;
   statuses(): ProjectStatus[];
+}
+
+/** The project's decisions and know-how files in its repo; missing files read as empty. */
+export interface MemoryFiles {
+  read(repo: string): Promise<ProjectMemory>;
+  write(repo: string, kind: MemoryKind, entries: readonly MemoryEntry[]): Promise<void>;
 }
 
 export interface RepoProbe {

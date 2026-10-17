@@ -3,17 +3,20 @@ import type { CreateTask, Task, TaskPatch } from '@shared/task';
 import type { TaskEvent } from '@shared/taskStatus';
 import { ConflictError, NotFoundError, ValidationError } from '../domain/errors';
 import { transition } from '../domain/taskMachine';
-import type { BoardEventSink, ProjectRepo, RunRepo, TaskRepo, WorkScheduler } from './ports';
+import type { BoardEventSink, ProjectRepo, RunRepo, SnapshotRepo, TaskRepo, WorkScheduler } from './ports';
 
 // The drag moves. Accept, reject and cancel go through ReviewService; the rest come from the scheduler.
 const BOARD_EVENTS: ReadonlySet<TaskEvent> = new Set(['promote', 'demote']);
 const EDITABLE: ReadonlySet<Task['status']> = new Set(['backlog', 'todo']);
+// No agent work is attached: a cancel already rolled the repo back.
+const DELETABLE: ReadonlySet<Task['status']> = new Set(['backlog', 'cancelled']);
 
 export class TaskService {
   constructor(
     private readonly _projects: ProjectRepo,
     private readonly _tasks: TaskRepo,
     private readonly _runs: RunRepo,
+    private readonly _snapshots: SnapshotRepo,
     private readonly _scheduler: WorkScheduler,
     private readonly _events: BoardEventSink,
   ) {}
@@ -44,6 +47,26 @@ export class TaskService {
     const updated = this._tasks.update(id, patch);
     this._events.publish({ type: 'task', task: updated });
     return updated;
+  }
+
+  /** Back to Backlog with your edits; the next pickup takes a fresh snapshot (invariant 4). */
+  reopen(id: number, patch: TaskPatch): Task {
+    const task = this._require(id);
+    if (patch.dependsOn !== undefined) this._checkDependency(task.projectId, patch.dependsOn, id);
+    const reopened = this._tasks.applyStatusChange(transition(task, 'reopen'));
+    this._snapshots.delete(id);
+    const updated = Object.keys(patch).length > 0 ? this._tasks.update(id, patch) : reopened;
+    this._events.publish({ type: 'task', task: updated });
+    return updated;
+  }
+
+  delete(id: number): void {
+    const task = this._require(id);
+    if (!DELETABLE.has(task.status)) throw new ConflictError('Only Backlog and Cancelled tasks can be deleted');
+    const freed = this._tasks.delete(id);
+    this._events.publish({ type: 'taskDeleted', taskId: id });
+    for (const dependent of freed) this._events.publish({ type: 'task', task: dependent });
+    if (freed.some((t) => t.status === 'todo')) void this._scheduler.kick(task.projectId);
   }
 
   applyBoardEvent(id: number, event: TaskEvent): Task {

@@ -20,6 +20,7 @@ export const TASK_EVENTS = [
   'reject',
   'accept',
   'cancel',
+  'reopen',
 ] as const;
 
 export type TaskEvent = (typeof TASK_EVENTS)[number];
