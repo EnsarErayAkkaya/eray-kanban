@@ -44,6 +44,10 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     reply.code(202);
     return { checking: true };
   });
+  app.post('/api/projects/:id/pause', async (req) => projects.pause(IdParams.parse(req.params).id));
+  app.post('/api/projects/:id/resume', async (req) => projects.resume(IdParams.parse(req.params).id));
+  app.post('/api/projects/pause-all', async () => projects.pauseAll());
+  app.post('/api/projects/resume-all', async () => projects.resumeAll());
   app.post('/api/projects', async (req, reply) => {
     reply.code(201);
     return projects.create(CreateProjectInput.parse(req.body));

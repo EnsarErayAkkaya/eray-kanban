@@ -93,6 +93,11 @@ export class FakeScheduler implements WorkScheduler {
     this.stopped.push(taskId);
     return this.running;
   }
+  readonly stoppedProjects: number[] = [];
+  stopProject(projectId: number): boolean {
+    this.stoppedProjects.push(projectId);
+    return this.running;
+  }
   /** Lets a test play the worker finishing after a stop, as the real scheduler would. */
   onStop: (taskId: number) => void = () => undefined;
   stopAndWait(taskId: number): Promise<void> {

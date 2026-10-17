@@ -123,6 +123,12 @@ export class Scheduler implements WorkScheduler {
     return controller !== undefined;
   }
 
+  /** Pause switch: stops the project's running agent, if any; the task goes to review as with stop(). */
+  stopProject(projectId: number): boolean {
+    const active = this._deps.tasks.activeTask(projectId);
+    return active !== undefined && this.stop(active.id);
+  }
+
   async stopAndWait(taskId: number): Promise<void> {
     const task = this._deps.tasks.get(taskId);
     if (!task) return;
@@ -174,7 +180,7 @@ export class Scheduler implements WorkScheduler {
     const { projects, tasks, git, snapshots } = this._deps;
     const project = projects.get(projectId);
     if (!project) return;
-    const next = tasks.activeTask(projectId) ? undefined : tasks.nextTodo(projectId);
+    const next = project.paused || tasks.activeTask(projectId) ? undefined : tasks.nextTodo(projectId);
     if (!next) {
       this._setBlocked(projectId, null);
       return;
@@ -194,9 +200,9 @@ export class Scheduler implements WorkScheduler {
     }
     this._setBlocked(projectId, null);
 
-    // The task may have been cancelled or moved back while the repo was being checked.
+    // The task may have been cancelled or moved back, or the project paused, while the repo was being checked.
     const current = tasks.get(next.id);
-    if (current?.status !== 'todo') return;
+    if (current?.status !== 'todo' || projects.get(projectId)?.paused) return;
     let task: Task;
     try {
       task = this._move(current, 'start');
@@ -223,6 +229,12 @@ export class Scheduler implements WorkScheduler {
     const task = tasks.get(taskId);
     const project = task && projects.get(task.projectId);
     if (!task || !project || task.status !== 'in_progress') return;
+    if (project.paused) {
+      // Paused after the reply was queued: no agent may start, so hand the task back to review.
+      log.info(`Project ${project.id} is paused; task ${task.id} goes back to review without resuming`);
+      this._move(task, 'submit');
+      return;
+    }
 
     const sessionId = runs
       .listByTask(task.id)

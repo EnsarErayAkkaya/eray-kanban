@@ -1,10 +1,12 @@
 import { z } from 'zod';
 import { RunLogLineSchema, RunSchema } from './run';
+import { ProjectSchema } from './project';
 import { TaskSchema } from './task';
 
 // Pushed to the UI over SSE.
 export const BoardEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('task'), task: TaskSchema }),
+  z.object({ type: z.literal('project'), project: ProjectSchema }),
   z.object({ type: z.literal('taskDeleted'), taskId: z.number().int().positive() }),
   z.object({ type: z.literal('run'), run: RunSchema }),
   z.object({ type: z.literal('log'), taskId: z.number().int().positive(), lines: z.array(RunLogLineSchema) }),

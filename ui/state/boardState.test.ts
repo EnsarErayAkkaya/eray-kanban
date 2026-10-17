@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CreateProjectInput, type Project } from '@shared/project';
 import type { Run, RunLogLine } from '@shared/run';
 import type { Task } from '@shared/task';
 import { boardReducer, initialBoardState, usageTotals } from './boardState';
@@ -23,6 +24,14 @@ const task = (id: number, status: Task['status'] = 'backlog'): Task => ({
   commitSha: null,
   createdAt: '2026-10-16T09:00:00.000Z',
   updatedAt: '2026-10-16T09:00:00.000Z',
+});
+
+const project = (id: number, paused = false): Project => ({
+  ...CreateProjectInput.parse({ name: `p${id}`, repoPath: `/repos/p${id}`, workingBranch: 'main' }),
+  id,
+  paused,
+  createdAt: '2026-10-17T09:00:00.000Z',
+  updatedAt: '2026-10-17T09:00:00.000Z',
 });
 
 const line = (runId: number, seq: number, text = `line ${seq}`): RunLogLine => ({
@@ -111,6 +120,14 @@ describe('boardReducer', () => {
     state = boardReducer(state, { type: 'event', event: { type: 'projectStatus', projectId: 2, blocked: 'Repo is on main' } });
     state = boardReducer(state, { type: 'event', event: { type: 'projectStatus', projectId: 1, blocked: null } });
     expect(state.blocked).toEqual({ 2: 'Repo is on main' });
+  });
+
+  it('shows a pause from a project event or a pause-all reply', () => {
+    const loaded = boardReducer(initialBoardState, { type: 'loaded', projects: [project(1), project(2)], tasks: [], statuses: [] });
+    const one = boardReducer(loaded, { type: 'event', event: { type: 'project', project: project(1, true) } });
+    expect(one.projects.map((p) => p.paused)).toEqual([true, false]);
+    const all = boardReducer(one, { type: 'projectsSaved', projects: [project(1, true), project(2, true)] });
+    expect(all.projects.map((p) => [p.id, p.paused])).toEqual([[1, true], [2, true]]);
   });
 
   it('updates a run in place when it finishes', () => {

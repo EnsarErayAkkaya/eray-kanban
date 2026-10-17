@@ -46,7 +46,11 @@ export class TaskService {
 
     const updated = this._tasks.update(id, patch);
     this._events.publish({ type: 'task', task: updated });
-    return updated;
+    // A Todo task may have been waiting only on the dependency that just changed.
+    if (updated.status === 'todo' && patch.dependsOn !== undefined && patch.dependsOn !== task.dependsOn) {
+      void this._scheduler.kick(updated.projectId);
+    }
+    return this._tasks.get(id) ?? updated;
   }
 
   /** Back to Backlog with your edits; the next pickup takes a fresh snapshot (invariant 4). */
@@ -104,5 +108,12 @@ export class TaskService {
     if (dependsOn === selfId) throw new ValidationError('A task cannot depend on itself');
     const dep = this._tasks.get(dependsOn);
     if (!dep || dep.projectId !== projectId) throw new ValidationError('Dependency must be a task in the same project');
+    if (selfId === undefined) return;
+    // A loop would leave every task in it waiting forever.
+    const seen = new Set<number>();
+    for (let next: number | null = dep.dependsOn; next !== null && !seen.has(next); next = this._tasks.get(next)?.dependsOn ?? null) {
+      if (next === selfId) throw new ValidationError('That dependency would make the tasks wait on each other');
+      seen.add(next);
+    }
   }
 }

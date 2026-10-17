@@ -28,6 +28,7 @@ export type BoardAction =
       readonly statuses: readonly ProjectStatus[];
     }
   | { readonly type: 'projectSaved'; readonly project: Project }
+  | { readonly type: 'projectsSaved'; readonly projects: readonly Project[] }
   | { readonly type: 'event'; readonly event: BoardEvent }
   | { readonly type: 'runsLoaded'; readonly taskId: number; readonly runs: readonly Run[] }
   | { readonly type: 'logLoaded'; readonly taskId: number; readonly lines: readonly RunLogLine[] }
@@ -103,6 +104,8 @@ function applyEvent(state: BoardState, event: BoardEvent): BoardState {
   switch (event.type) {
     case 'task':
       return isStale(state.tasks, event.task) ? state : { ...state, tasks: upsert(state.tasks, event.task) };
+    case 'project':
+      return { ...state, projects: upsert(state.projects, event.project) };
     case 'taskDeleted':
       return { ...state, tasks: state.tasks.filter((t) => t.id !== event.taskId) };
     case 'run':
@@ -126,6 +129,8 @@ export function boardReducer(state: BoardState, action: BoardAction): BoardState
       };
     case 'projectSaved':
       return { ...state, projects: upsert(state.projects, action.project) };
+    case 'projectsSaved':
+      return { ...state, projects: action.projects.reduce<readonly Project[]>(upsert, state.projects) };
     case 'event':
       return applyEvent(state, action.event);
     case 'runsLoaded':

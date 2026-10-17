@@ -243,6 +243,54 @@ describe('Scheduler', () => {
     expect(runs.listByTask(task.id)[0]?.outcome).toBe('stopped');
   });
 
+  describe('pause switch', () => {
+    it('starts nothing in a paused project, and the next kick after resuming picks the task up', async () => {
+      projectRepo.setPaused(project.id, true);
+      const task = todo();
+      await scheduler.kick(project.id);
+      expect(agent.calls).toHaveLength(0);
+      expect(statusOf(task.id)).toBe('todo');
+
+      projectRepo.setPaused(project.id, false);
+      await scheduler.kick(project.id);
+      expect(statusOf(task.id)).toBe('in_review');
+    });
+
+    it('stopProject() kills the running agent and sends its task to review', async () => {
+      agent.script = waitForAbort;
+      const task = todo();
+      const worker = scheduler.kick(project.id);
+      await settle();
+      expect(scheduler.stopProject(project.id)).toBe(true);
+      await worker;
+      expect(runs.listByTask(task.id)[0]?.outcome).toBe('stopped');
+      expect(statusOf(task.id)).toBe('in_review');
+      expect(scheduler.stopProject(project.id)).toBe(false);
+    });
+
+    it('does not start a task when the project is paused while the repo is being checked', async () => {
+      const task = todo();
+      const original = git.snapshot.bind(git);
+      git.snapshot = async (repo, branch) => {
+        projectRepo.setPaused(project.id, true);
+        return original(repo, branch);
+      };
+      await scheduler.kick(project.id);
+      expect(agent.calls).toHaveLength(0);
+      expect(statusOf(task.id)).toBe('todo');
+    });
+
+    it('hands a queued reply back to review when the project was paused before it ran', async () => {
+      const task = todo();
+      await scheduler.kick(project.id);
+      tasks.applyStatusChange(transition(tasks.get(task.id) ?? task, 'reject'));
+      projectRepo.setPaused(project.id, true);
+      await scheduler.resumeWithFeedback(task.id, 'Use a toggle');
+      expect(agent.calls).toHaveLength(1);
+      expect(statusOf(task.id)).toBe('in_review');
+    });
+  });
+
   it('does nothing when the project has no Todo task', async () => {
     tasks.create(newTask(project.id));
     await scheduler.kick(project.id);

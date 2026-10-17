@@ -3,7 +3,7 @@ import type { NewProject, Project, ProjectPatch } from '@shared/project';
 import { ConflictError, NotFoundError, ValidationError } from '../domain/errors';
 import { MAX_PROJECT_FILES, type ProjectFiles } from '@shared/files';
 import type { ProjectUsage } from '@shared/run';
-import type { GitPort, ProjectRepo, RepoProbe, RunRepo, TaskRepo, WorkScheduler } from './ports';
+import type { BoardEventSink, GitPort, ProjectRepo, RepoProbe, RunRepo, TaskRepo, WorkScheduler } from './ports';
 
 function devUrlKey(devUrl: string): string {
   const url = new URL(devUrl);
@@ -18,6 +18,7 @@ export class ProjectService {
     private readonly _scheduler: WorkScheduler,
     private readonly _runs: Pick<RunRepo, 'usageByProject'>,
     private readonly _git: Pick<GitPort, 'listFiles'>,
+    private readonly _events: BoardEventSink,
   ) {}
 
   /** For @-references in the task form. */
@@ -60,6 +61,34 @@ export class ProjectService {
     }
     if (patch.devUrl !== undefined) this._requireOwnDevUrl(patch.devUrl, id);
     return this._projects.update(id, patch);
+  }
+
+  /** Pause switch: stops the running agent (its task goes to review) and starts nothing until resumed. */
+  pause(id: number): Project {
+    const project = this._setPaused(id, true);
+    this._scheduler.stopProject(id);
+    return project;
+  }
+
+  resume(id: number): Project {
+    const project = this._setPaused(id, false);
+    void this._scheduler.kick(id);
+    return project;
+  }
+
+  pauseAll(): Project[] {
+    return this._projects.list().map((p) => this.pause(p.id));
+  }
+
+  resumeAll(): Project[] {
+    return this._projects.list().map((p) => this.resume(p.id));
+  }
+
+  private _setPaused(id: number, paused: boolean): Project {
+    if (!this._projects.get(id)) throw new NotFoundError('project', id);
+    const project = this._projects.setPaused(id, paused);
+    this._events.publish({ type: 'project', project });
+    return project;
   }
 
   // Two projects on one port would screenshot each other's app; localhost, 127.0.0.1 and ::1 count as one.

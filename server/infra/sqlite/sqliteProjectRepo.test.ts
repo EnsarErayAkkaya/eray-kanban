@@ -47,6 +47,16 @@ describe('SqliteProjectRepo', () => {
     });
   });
 
+  it('starts unpaused and saves the pause switch', () => {
+    const created = repo.create(input('shop'));
+    expect(created.paused).toBe(false);
+    expect(repo.setPaused(created.id, true).paused).toBe(true);
+    expect(repo.get(created.id)?.paused).toBe(true);
+    expect(repo.update(created.id, { name: 'shop2' }).paused).toBe(true);
+    expect(repo.setPaused(created.id, false).paused).toBe(false);
+    expect(() => repo.setPaused(999, true)).toThrow(NotFoundError);
+  });
+
   it('lists projects by name', () => {
     repo.create(input('zeta'));
     repo.create(input('Alpha'));

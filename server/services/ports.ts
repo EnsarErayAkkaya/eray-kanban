@@ -19,6 +19,7 @@ export interface ProjectRepo {
   get(id: number): Project | undefined;
   list(): Project[];
   update(id: number, patch: ProjectPatch): Project;
+  setPaused(id: number, paused: boolean): Project;
 }
 
 export interface TemplateRepo {
@@ -287,6 +288,7 @@ export type AdapterRegistry = Readonly<Record<ProjectType, ProjectAdapter>>;
 export interface WorkScheduler {
   kick(projectId: number): Promise<void>;
   stop(taskId: number): boolean;
+  stopProject(projectId: number): boolean;
   /** Stops the run, if any, and resolves once its worker has finished and moved the task on. */
   stopAndWait(taskId: number): Promise<void>;
   resumeWithFeedback(taskId: number, feedback: string): Promise<void>;

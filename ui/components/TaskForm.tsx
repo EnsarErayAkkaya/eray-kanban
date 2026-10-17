@@ -3,6 +3,7 @@ import { MODELS } from '@shared/common';
 import type { Project } from '@shared/project';
 import { PRIORITIES, type Task } from '@shared/task';
 import { type TaskDraft, api } from '../state/apiClient';
+import { dependencyCandidates } from '../state/dependencies';
 import { buildEntries } from '../state/fileRefs';
 import type { ActionResult } from '../state/useBoard';
 import { useVersionedLoad } from '../state/useVersionedLoad';
@@ -45,13 +46,7 @@ export function TaskForm({ projects, tasks, defaultProjectId, task, onSubmit, on
   const activate = (field: FieldHandle) => {
     lastField.current = field;
   };
-  // Done tasks are already satisfied and cancelled ones never would be; an edit keeps the one it has.
-  const candidates = tasks.filter(
-    (t) =>
-      t.projectId === projectId &&
-      t.id !== task?.id &&
-      (t.id === task?.dependsOn || (t.status !== 'done' && t.status !== 'cancelled')),
-  );
+  const candidates = dependencyCandidates(tasks, projectId, task);
 
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();

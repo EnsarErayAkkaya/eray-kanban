@@ -3,6 +3,7 @@ import type { Task } from '@shared/task';
 import { usageTotals } from '../state/boardState';
 import { useBoard } from '../state/useBoard';
 import { Board } from './Board';
+import { ConfirmButton } from './ConfirmButton';
 import { ProjectForm } from './ProjectForm';
 import { ReviewPanel } from './ReviewPanel';
 import { Sheet } from './Sheet';
@@ -24,6 +25,9 @@ export function App() {
   const visibleTasks = projectId === null ? state.tasks : state.tasks.filter((t) => t.projectId === projectId);
   // Settings act on the filtered project, or on the only one there is.
   const settingsProject = state.projects.find((p) => p.id === projectId) ?? (state.projects.length === 1 ? state.projects[0] : undefined);
+  const filteredProject = state.projects.find((p) => p.id === projectId);
+  const anyRunning = state.projects.some((p) => !p.paused);
+  const anyPaused = state.projects.some((p) => p.paused);
   const openTask = state.tasks.find((t) => t.id === openTaskId);
   const editTask = state.tasks.find((t) => t.id === editTaskId);
   const closeReview = useCallback(() => setOpenTaskId(null), []);
@@ -79,6 +83,30 @@ export function App() {
         </button>
         <UsageSummary totals={usageTotals(state.usage, projectId)} />
         <div className="topbar__spacer" />
+        {filteredProject ? (
+          filteredProject.paused ? (
+            <button className="btn" onClick={() => void actions.setPaused(filteredProject.id, false)}>
+              Resume project
+            </button>
+          ) : (
+            <ConfirmButton
+              label="Pause project"
+              confirmLabel="Stop its agent?"
+              onConfirm={() => void actions.setPaused(filteredProject.id, true)}
+            />
+          )
+        ) : (
+          <>
+            {anyPaused && (
+              <button className="btn" onClick={() => void actions.setAllPaused(false)}>
+                Resume all
+              </button>
+            )}
+            {anyRunning && (
+              <ConfirmButton label="Pause all" confirmLabel="Stop every agent?" onConfirm={() => void actions.setAllPaused(true)} />
+            )}
+          </>
+        )}
         <span className={`status${state.connected ? ' status--live' : ''}`}>{state.connected ? 'Live' : 'Offline'}</span>
         <button className="btn" onClick={() => setPanel('project')}>
           New project
@@ -96,6 +124,19 @@ export function App() {
           </button>
         </div>
       )}
+
+      {state.projects
+        .filter((p) => p.paused && (projectId === null || projectId === p.id))
+        .map((p) => (
+          <div key={p.id} className="banner banner--warn" role="status">
+            <span>
+              <strong>{p.name}</strong> is paused: no agent runs until you resume it.
+            </span>
+            <button className="btn btn--small" onClick={() => void actions.setPaused(p.id, false)}>
+              Resume
+            </button>
+          </div>
+        ))}
 
       {state.projects
         .filter((p) => state.blocked[p.id] !== undefined && (projectId === null || projectId === p.id))

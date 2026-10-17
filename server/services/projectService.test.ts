@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { BoardEvent } from '@shared/events';
 import { CreateProjectInput } from '@shared/project';
 import { MAX_PROJECT_FILES } from '@shared/files';
 import { ConflictError, NotFoundError, ValidationError } from '../domain/errors';
@@ -16,13 +17,47 @@ describe('ProjectService', () => {
   let tasks: SqliteTaskRepo;
   let service: ProjectService;
   let git: FakeGit;
+  let scheduler: FakeScheduler;
+  let events: BoardEvent[];
 
   beforeEach(() => {
     const clock = fakeClock();
     const db = memoryDb();
     tasks = new SqliteTaskRepo(db, clock);
     git = new FakeGit();
-    service = new ProjectService(new SqliteProjectRepo(db, clock), tasks, probe, new FakeScheduler(), { usageByProject: () => [] }, git);
+    scheduler = new FakeScheduler();
+    events = [];
+    const sink = { publish: (e: BoardEvent) => events.push(e) };
+    service = new ProjectService(new SqliteProjectRepo(db, clock), tasks, probe, scheduler, { usageByProject: () => [] }, git, sink);
+  });
+
+  it('pauses a project: saves the flag, stops its agent and tells the board', () => {
+    const { id } = service.create(input('/repos/shop'));
+    expect(service.pause(id).paused).toBe(true);
+    expect(scheduler.stoppedProjects).toEqual([id]);
+    expect(events).toMatchObject([{ type: 'project', project: { id, paused: true } }]);
+    expect(service.list()[0]?.paused).toBe(true);
+  });
+
+  it('resumes a project and kicks its worker', () => {
+    const { id } = service.create(input('/repos/shop'));
+    service.pause(id);
+    expect(service.resume(id).paused).toBe(false);
+    expect(scheduler.kicked).toEqual([id]);
+    expect(events.at(-1)).toMatchObject({ type: 'project', project: { id, paused: false } });
+  });
+
+  it('pauses and resumes every project at once', () => {
+    const shop = service.create(input('/repos/shop'));
+    const api = service.create({ ...input('/repos/api'), name: 'api' });
+    expect(service.pauseAll().map((p) => p.paused)).toEqual([true, true]);
+    expect(scheduler.stoppedProjects.sort()).toEqual([shop.id, api.id].sort());
+    expect(service.resumeAll().every((p) => !p.paused)).toBe(true);
+    expect(scheduler.kicked.sort()).toEqual([shop.id, api.id].sort());
+  });
+
+  it('refuses to pause an unknown project', () => {
+    expect(() => service.pause(99)).toThrow(NotFoundError);
   });
 
   it('creates a project for a git repo', () => {

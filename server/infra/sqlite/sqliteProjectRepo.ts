@@ -23,11 +23,12 @@ interface ProjectRow {
   dev_command: string | null;
   dev_url: string | null;
   screenshot_sizes: string;
+  paused: number;
   created_at: string;
   updated_at: string;
 }
 
-type ProjectParams = Omit<ProjectRow, 'id' | 'created_at'>;
+type ProjectParams = Omit<ProjectRow, 'id' | 'paused' | 'created_at'>;
 
 // One list drives both statements, so a new setting cannot be saved on create but lost on update.
 const COLUMNS: readonly (keyof ProjectParams)[] = [
@@ -71,6 +72,7 @@ function fromRow(r: ProjectRow): Project {
     devCommand: r.dev_command,
     devUrl: r.dev_url,
     screenshotSizes: JSON.parse(r.screenshot_sizes),
+    paused: r.paused === 1,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   });
@@ -104,6 +106,7 @@ export class SqliteProjectRepo implements ProjectRepo {
   private readonly _update: Statement<[ProjectParams & { id: number }]>;
   private readonly _get: Statement<[number], ProjectRow>;
   private readonly _list: Statement<[], ProjectRow>;
+  private readonly _setPaused: Statement<{ id: number; paused: number; now: string }>;
 
   constructor(
     db: Database,
@@ -117,6 +120,7 @@ export class SqliteProjectRepo implements ProjectRepo {
     this._update = db.prepare(`UPDATE projects SET ${COLUMNS.map((c) => `${c} = @${c}`).join(', ')} WHERE id = @id`);
     this._get = db.prepare('SELECT * FROM projects WHERE id = ?');
     this._list = db.prepare('SELECT * FROM projects ORDER BY name COLLATE NOCASE');
+    this._setPaused = db.prepare('UPDATE projects SET paused = @paused, updated_at = @now WHERE id = @id');
   }
 
   create(project: NewProject): Project {
@@ -145,6 +149,15 @@ export class SqliteProjectRepo implements ProjectRepo {
       this._update.run({ ...toParams(next, this._clock()), id });
       return this.get(id) ?? existing;
     });
+  }
+
+  setPaused(id: number, paused: boolean): Project {
+    if (this._setPaused.run({ id, paused: toFlag(paused), now: this._clock() }).changes === 0) {
+      throw new NotFoundError('project', id);
+    }
+    const project = this.get(id);
+    if (!project) throw new NotFoundError('project', id);
+    return project;
   }
 
   private _writing<T>(write: () => T): T {

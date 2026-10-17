@@ -54,7 +54,7 @@ describe('HTTP API', () => {
     kicked = scheduler.kicked;
     app = buildServer(
       {
-        projects: new ProjectService(projects, tasks, { isGitRepo: (p) => p.startsWith('/repos/') }, scheduler, runs, new FakeGit()),
+        projects: new ProjectService(projects, tasks, { isGitRepo: (p) => p.startsWith('/repos/') }, scheduler, runs, new FakeGit(), hub),
         tasks: new TaskService(projects, tasks, runs, snapshotRepo, scheduler, hub),
         review: new ReviewService({
           projects,
@@ -132,6 +132,30 @@ describe('HTTP API', () => {
     it('reports a duplicate as a conflict', async () => {
       await createProject();
       expect((await send('POST', '/api/projects', { name: 'shop', repoPath: '/repos/shop', workingBranch: 'main' })).statusCode).toBe(409);
+    });
+  });
+
+  describe('pause switch', () => {
+    it('pauses and resumes one project', async () => {
+      const { id } = await createProject();
+      const paused = await send('POST', `/api/projects/${id}/pause`);
+      expect(paused.statusCode).toBe(200);
+      expect(paused.json()).toMatchObject({ id, paused: true });
+      expect(scheduler.stoppedProjects).toEqual([id]);
+      expect((await send('GET', '/api/projects')).json()[0].paused).toBe(true);
+      expect((await send('POST', `/api/projects/${id}/resume`)).json()).toMatchObject({ id, paused: false });
+      expect(kicked).toContain(id);
+    });
+
+    it('pauses and resumes every project', async () => {
+      await createProject();
+      const all = await send('POST', '/api/projects/pause-all');
+      expect(all.json()).toMatchObject([{ paused: true }]);
+      expect((await send('POST', '/api/projects/resume-all')).json()).toMatchObject([{ paused: false }]);
+    });
+
+    it('answers 404 for an unknown project', async () => {
+      expect((await send('POST', '/api/projects/99/pause')).statusCode).toBe(404);
     });
   });
 

@@ -31,6 +31,7 @@ function project(port: number, devCommand: string | null): Project {
     ...CreateProjectInput.parse({ name: 'web', repoPath: dir, workingBranch: 'main' }),
     devUrl: `http://127.0.0.1:${port}`,
     devCommand,
+    paused: false,
     id: 1,
     createdAt: '2026-10-17T09:00:00.000Z',
     updatedAt: '2026-10-17T09:00:00.000Z',

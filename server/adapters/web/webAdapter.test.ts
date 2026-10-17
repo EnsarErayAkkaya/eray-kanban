@@ -14,6 +14,7 @@ const project: Project = {
     devUrl: 'http://localhost:3000',
     screenshotSizes: ['desktop', 'mobile'],
   }),
+  paused: false,
   id: 1,
   createdAt: '2026-10-17T09:00:00.000Z',
   updatedAt: '2026-10-17T09:00:00.000Z',

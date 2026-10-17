@@ -112,6 +112,14 @@ describe('ReviewService', () => {
       expect(() => service.reject(noSession.id, 'x')).toThrow('This task has no agent session to resume');
       expect(tasks.get(noSession.id)?.status).toBe('in_review');
     });
+
+    it('refuses while the project is paused and leaves the task in review', () => {
+      const task = inReview();
+      projects.setPaused(project.id, true);
+      expect(() => service.reject(task.id, 'x')).toThrow('Project is paused; resume it first');
+      expect(tasks.get(task.id)?.status).toBe('in_review');
+      expect(scheduler.resumed).toEqual([]);
+    });
   });
 
   describe('answer', () => {
@@ -137,6 +145,13 @@ describe('ReviewService', () => {
       const noSession = waitingForInput(false);
       expect(() => service.answer(noSession.id, 'x')).toThrow('This task has no agent session to resume');
       expect(tasks.get(noSession.id)?.status).toBe('needs_input');
+    });
+
+    it('refuses while the project is paused and keeps waiting for input', () => {
+      const task = waitingForInput();
+      projects.setPaused(project.id, true);
+      expect(() => service.answer(task.id, 'x')).toThrow('Project is paused; resume it first');
+      expect(tasks.get(task.id)?.status).toBe('needs_input');
     });
   });
 

@@ -1,6 +1,6 @@
 # Agent Kanban — Project Plan
 
-Oct 16, 2026 · @Master · updated Oct 17, 2026: M1 to M3 done, M4 built and waiting on its soak test
+Oct 16, 2026 · @Master · updated Oct 17, 2026: M1 to M3 done, M4 complete apart from its soak test
 
 ## Goals and scope
 
@@ -173,7 +173,8 @@ Four milestones, each usable on its own; web projects are fully covered after M3
 4. **M4 — Polish and parallel projects.** 🔨 Built, soak test pending. All projects running at once, cost totals, templates, dependencies, Needs Input state.
    - Done when: three projects run in parallel for a day without manual git cleanup.
    - Built: projects run in parallel. A Needs Input question is answered from the review panel and the agent resumes its session. New tasks can depend on another task, and cards show what they wait for (or that the dependency was cancelled). The top bar shows cost, turns and runs for one project or all. Per-project templates (name, title prefix, description, criteria, priority, visual and routes, model, turn limit) are managed in project settings and pre-fill the task form.
-   - Not yet: changing a task's dependency after it is created, and a per-project or global kill switch.
+   - Pause switch: a project, or all of them at once, can be paused from the top bar. Pausing stops the running agent (its task goes to review with what it has) and nothing starts, including a reply to a question or review, until you resume. The pause survives a restart.
+   - A Backlog or Todo task's dependency can be changed in its edit form. Loops are refused, and a Todo task starts as soon as its new dependency allows.
 5. **Later — Unity adapter.** Editor launch on demand, Unity MCP checks and captures.
 
 ### Decisions made along the way

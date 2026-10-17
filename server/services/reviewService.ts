@@ -76,6 +76,7 @@ export class ReviewService {
     if (this._busy.has(taskId)) throw new ConflictError('Another action is already running for this task');
     const task = this._require(taskId);
     if (task.status !== 'in_review') throw new ConflictError('Only a task in review can be rejected');
+    this._requireRunnable(task);
     if (!this._deps.runs.listByTask(taskId).some((r) => r.sessionId !== null)) {
       throw new ConflictError('This task has no agent session to resume');
     }
@@ -88,6 +89,7 @@ export class ReviewService {
     if (this._busy.has(taskId)) throw new ConflictError('Another action is already running for this task');
     const task = this._require(taskId);
     if (task.status !== 'needs_input') throw new ConflictError('Only a task waiting for input can be answered');
+    this._requireRunnable(task);
     if (!this._deps.runs.listByTask(taskId).some((r) => r.sessionId !== null)) {
       throw new ConflictError('This task has no agent session to resume');
     }
@@ -234,6 +236,11 @@ export class ReviewService {
     const task = this._deps.tasks.get(id);
     if (!task) throw new NotFoundError('task', id);
     return task;
+  }
+
+  // A paused project runs no agent, including one resumed by your reply.
+  private _requireRunnable(task: Task): void {
+    if (this._deps.projects.get(task.projectId)?.paused) throw new ConflictError('Project is paused; resume it first');
   }
 
   private _projectOf(task: Task): Project {

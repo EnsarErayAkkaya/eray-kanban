@@ -65,6 +65,7 @@ const fields = {
 export const ProjectSchema = z.object({
   id: IdSchema,
   ...fields,
+  paused: z.boolean(),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
 });

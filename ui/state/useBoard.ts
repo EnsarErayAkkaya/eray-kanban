@@ -45,6 +45,9 @@ export interface BoardActions {
   review(taskId: number, action: ReviewAction, inline?: boolean): Promise<ActionResult>;
   loadHistory(taskId: number): Promise<ActionResult>;
   checkProject(projectId: number): Promise<ActionResult>;
+  /** Pause switch: stops the running agent and starts nothing until resumed. */
+  setPaused(projectId: number, paused: boolean): Promise<ActionResult>;
+  setAllPaused(paused: boolean): Promise<ActionResult>;
   dismissError(): void;
 }
 
@@ -138,6 +141,13 @@ export function useBoard(): { state: BoardState; actions: BoardActions } {
           dispatch({ type: 'logLoaded', taskId, lines: logs.flat() });
         }, true),
       checkProject: (projectId) => attempt(async () => void (await api.checkProject(projectId)), true),
+      setPaused: (projectId, paused) =>
+        attempt(async () => {
+          const project = await (paused ? api.pauseProject(projectId) : api.resumeProject(projectId));
+          dispatch({ type: 'projectSaved', project });
+        }, true),
+      setAllPaused: (paused) =>
+        attempt(async () => dispatch({ type: 'projectsSaved', projects: await (paused ? api.pauseAll() : api.resumeAll()) }), true),
       dismissError: () => dispatch({ type: 'error', message: null }),
     };
   }, []);

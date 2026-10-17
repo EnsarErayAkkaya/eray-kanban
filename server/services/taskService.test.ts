@@ -78,6 +78,31 @@ describe('TaskService', () => {
       const task = create();
       expect(() => service.update(task.id, { dependsOn: task.id })).toThrow(ValidationError);
     });
+
+    it('refuses a dependency loop, direct or through other tasks', () => {
+      const a = create();
+      const b = create({ dependsOn: a.id });
+      const c = create({ dependsOn: b.id });
+      expect(() => service.update(a.id, { dependsOn: b.id })).toThrow('wait on each other');
+      expect(() => service.update(a.id, { dependsOn: c.id })).toThrow('wait on each other');
+      expect(() => service.reopen(force(a, 'cancel').id, { dependsOn: c.id })).toThrow('wait on each other');
+      expect(tasks.get(a.id)?.dependsOn).toBeNull();
+    });
+
+    it('wakes the project when a waiting Todo task gets a new dependency or none', () => {
+      const dep = create();
+      const waiting = force(create({ dependsOn: dep.id }), 'promote');
+      service.update(waiting.id, { title: 'Renamed' });
+      expect(scheduler.kicked).toEqual([]);
+      service.update(waiting.id, { dependsOn: null });
+      expect(scheduler.kicked).toEqual([project.id]);
+    });
+
+    it('does not wake the project for a Backlog task', () => {
+      const dep = create();
+      service.update(create({ dependsOn: dep.id }).id, { dependsOn: null });
+      expect(scheduler.kicked).toEqual([]);
+    });
   });
 
   describe('applyBoardEvent', () => {
